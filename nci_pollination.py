@@ -2,10 +2,11 @@
 Pollination analysis for NCI project. This is based off the IPBES-Pollination
 project so that Peter can run specific landcover maps with given price data.
 """
+import re
 import collections
 import csv
 import shutil
-import multiprocessing
+import glob
 import sys
 import zipfile
 import time
@@ -44,6 +45,8 @@ logging.basicConfig(
         ' [%(pathname)s.%(funcName)s:%(lineno)d] %(message)s'),
     stream=sys.stdout)
 LOGGER = logging.getLogger('nci_pollination')
+logging.getLogger('taskgraph').setLevel(logging.ERROR)
+
 _MULT_NODATA = -1
 # the following are the globio landcover codes. A tuple (x, y) indicates the
 # inclusive range from x to y. Pollinator habitat was defined as any natural
@@ -64,10 +67,11 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = max(1, multiprocessing.cpu_count())
+N_WORKERS = -1 #max(1, multiprocessing.cpu_count())
 
 CROP_PRICES_URL = 'https://storage.googleapis.com/nci-ecoshards/prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv'
 COUNTRY_ISO_GPKG_URL = 'https://storage.googleapis.com/nci-ecoshards/country_shapefile-20191004T192454Z-001_md5_4eb621c6c74707f038d9ac86a4f2b662.gpkg'
+YIELD_AND_HAREA_ZIP_URL = 'https://storage.googleapis.com/nci-ecoshards/ipbes_monfreda_2008_observed_yield_and_harea_md5_49b529f57071cc85abbd02b6e105089b.zip'
 
 
 def main():
@@ -98,8 +102,18 @@ def main():
         target_path_list=[country_iso_gpkg_path],
         task_name='download country iso gpkg')
 
+    zip_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
+    yield_and_harea_task = task_graph.add_task(
+        func=download_and_unzip,
+        args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
+              zip_touch_file_path),
+        target_path_list=[zip_touch_file_path],
+        task_name='download and unzip yield and harea')
+
     crop_prices_task.join()
     country_iso_gpkg_task.join()
+    yield_and_harea_task.join()
 
     country_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(dict))
@@ -114,10 +128,32 @@ def main():
                     row['ISO3']][row['earthstat_filename_prefix']] = float(
                         price_list[0])
 
-    country_iso_vector = gdal.OpenEx(country_iso_gpkg_path, gdal.OF_VECTOR)
-    country_iso_layer = country_iso_vector.GetLayer()
-    for country_feature in country_iso_layer:
-        country_iso_name = country_feature.GetField('iso3')
+    base_crop_raster = os.path.join(
+        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea',
+        'abaca_yield.tif')
+
+    for yield_raster_path in glob.glob(os.path.join(
+            ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea',
+            '*_yield.tif')):
+        crop_name = re.match(
+            '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
+        LOGGER.debug(crop_name)
+        crop_price_raster_path = os.path.join(
+            CHURN_DIR, '%s_price.tif' % crop_name)
+        price_raster_task = task_graph.add_task(
+            func=create_price_raster,
+            args=(
+                yield_raster_path, country_iso_gpkg_path,
+                country_crop_price_map, crop_name, crop_price_raster_path),
+            target_path_list=[crop_price_raster_path],
+            task_name='%s price raster' % crop_name)
+    task_graph.join()
+    task_graph.close()
+
+    # country_iso_vector = gdal.OpenEx(country_iso_gpkg_path, gdal.OF_VECTOR)
+    # country_iso_layer = country_iso_vector.GetLayer()
+    # for country_feature in country_iso_layer:
+    #     country_iso_name = country_feature.GetField('iso3')
 
     return
 
@@ -2665,6 +2701,76 @@ def build_lookup_from_csv(
             row = row.fillna('')
         lookup_dict[row[key_index]] = dict(zip(header_row, row))
     return lookup_dict
+
+
+def download_and_unzip(url, target_dir, target_token_path):
+    """Download `url` to `target_dir` and touch `target_token_path`."""
+    zipfile_path = os.path.join(target_dir, os.path.basename(url))
+    LOGGER.debug('url %s, zipfile_path: %s', url, zipfile_path)
+    ecoshard.download_url(url, zipfile_path)
+
+    with zipfile.ZipFile(zipfile_path, 'r') as zip_ref:
+        zip_ref.extractall(target_dir)
+
+    with open(target_token_path, 'w') as touchfile:
+        touchfile.write(f'unzipped {zipfile_path}')
+
+
+def create_price_raster(
+        base_raster_path, country_vector_path, country_crop_price_map,
+        crop_name, target_crop_price_raster_path):
+    """Rasterize countries as prices.
+
+    Parameters:
+        base_raster_path (str): path to a raster that will be the base shape
+            for `target_crop_price_ratser_path`.
+        country_vector_path (str): path to country shapefile that has a
+            field called `ISO3` that corresponds to the first key in
+            `price_map`.
+        country_crop_price_map (dict): map that indexes country ISO names to
+            `crop_name`. If this crop is not in the subdictionary there is
+            no price for that crop in that country.
+        target_crop_price_raster_path (str): a raster with pixel values
+            corresponding to the country in which the pixel resides and
+            the price of that crop in the country.
+
+    Returns:
+        None.
+
+    """
+    pygeoprocessing.new_raster_from_base(
+        base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
+        [-1], fill_value_list=[-1])
+    memory_driver = ogr.GetDriverByName('MEMORY')
+    country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
+    country_layer = country_vector.GetLayer()
+
+    price_vector = memory_driver.CreateDataSource('price_vector')
+    spat_ref = country_layer.GetSpatialRef()
+
+    price_layer = price_vector.CreateLayer(
+        'price_layer', spat_ref, ogr.wkbPolygon)
+    price_layer.CreateField(ogr.FieldDefn('price', ogr.OFTReal))
+    price_layer_defn = price_layer.GetLayerDefn()
+    # add polygons to subset_layer
+    price_layer.StartTransaction()
+    for country_feature in country_layer:
+        country_name = country_feature.GetField('ISO3')
+        if crop_name in country_crop_price_map[country_name]:
+            country_geom = country_feature.GetGeometryRef()
+            new_feature = ogr.Feature(price_layer_defn)
+            new_feature.SetGeometry(country_geom.Clone())
+            new_feature.SetField(
+                'price', country_crop_price_map[country_name][crop_name])
+            price_layer.CreateFeature(new_feature)
+    price_layer.CommitTransaction()
+
+    target_crop_raster = gdal.OpenEx(
+        target_crop_price_raster_path, gdal.OF_RASTER | gdal.GA_Update)
+    gdal.RasterizeLayer(
+        target_crop_raster, [1], price_layer,
+        options=['ATTRIBUTE=price'])
+
 
 if __name__ == '__main__':
     main()
