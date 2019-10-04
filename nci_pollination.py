@@ -14,18 +14,16 @@ import logging
 import itertools
 import tempfile
 
+import ecoshard
 import rtree
 import shapely.wkb
 import shapely.prepared
 from osgeo import gdal
 from osgeo import ogr
-import google.cloud.client
-import google.cloud.storage
 from osgeo import osr
 import pandas
 import numpy
 import scipy.ndimage.morphology
-import reproduce
 import taskgraph
 import pygeoprocessing
 
@@ -44,7 +42,7 @@ logging.basicConfig(
         '%(asctime)s (%(relativeCreated)d) %(levelname)s %(name)s'
         ' [%(pathname)s.%(funcName)s:%(lineno)d] %(message)s'),
     stream=sys.stdout)
-LOGGER = logging.getLogger('cnc_pollination')
+LOGGER = logging.getLogger('nci_pollination')
 _MULT_NODATA = -1
 # the following are the globio landcover codes. A tuple (x, y) indicates the
 # inclusive range from x to y. Pollinator habitat was defined as any natural
@@ -59,21 +57,16 @@ _MULT_NODATA = -1
 GLOBIO_AG_CODES = [2, (10, 40), (230, 232)]
 GLOBIO_NATURAL_CODES = [6, (50, 180)]
 
-WORKING_DIR = './ipbes_pollination_workspace'
+WORKING_DIR = './nci_pollination_workspace'
 OUTPUT_DIR = os.path.join(WORKING_DIR, 'outputs')
 ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
-try:
-    GOOGLE_BUCKET_KEY_PATH = os.path.normpath(sys.argv[1])
-except IndexError:
-    raise RuntimeError("Expected command line argument of path to bucket key")
-
 NODATA = -9999
 N_WORKERS = max(1, multiprocessing.cpu_count())
 
-GOOGLE_BUCKET_ID = 'ipbes-pollination-result'
-BLOB_ROOT = f'''ipbes_pollination_result'''
+CROP_PRICES_URL = 'https://storage.googleapis.com/nci-ecoshards/prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv'
+COUNTRY_ISO_GPKG_URL = 'https://storage.googleapis.com/nci-ecoshards/country_shapefile-20191004T192454Z-001_md5_4eb621c6c74707f038d9ac86a4f2b662.gpkg'
 
 
 def main():
@@ -87,7 +80,31 @@ def main():
     task_graph = taskgraph.TaskGraph(
         CHURN_DIR, N_WORKERS, reporting_interval=5.0)
 
-    summary_raster_path_map = {}
+    # CROP dependent prices?
+    crop_prices_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(CROP_PRICES_URL))
+    crop_prices_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(CROP_PRICES_URL, crop_prices_path),
+        target_path_list=[crop_prices_path],
+        task_name='download crop prices')
+
+    country_iso_gpkg_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
+    country_iso_gpkg_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
+        target_path_list=[country_iso_gpkg_path],
+        task_name='download country iso gpkg')
+
+    crop_prices_task.join()
+    country_iso_gpkg_task.join()
+
+    iso_to_crop_price_map = build_lookup_from_csv(
+        crop_prices_path, 'ISO3', to_lower=True, warn_if_missing=True)
+    LOGGER.debug(iso_to_crop_price_map)
+    return
+
 
     # 1.2.    POLLINATION-DEPENDENT NUTRIENT PRODUCTION
     # Pollination-dependence of crops, crop yields, and crop micronutrient
@@ -2557,6 +2574,81 @@ def calc_relevant_pop(
 
     shutil.rmtree(temp_working_dir, ignore_errors=True)
 
+
+def build_lookup_from_csv(
+        table_path, key_field, to_lower=True, warn_if_missing=True):
+    """Read a CSV table into a dictionary indexed by `key_field`.
+
+    Creates a dictionary from a CSV whose keys are unique entries in the CSV
+    table under the column named by `key_field` and values are dictionaries
+    indexed by the other columns in `table_path` including `key_field` whose
+    values are the values on that row of the CSV table.
+
+    Parameters:
+        table_path (string): path to a CSV file containing at
+            least the header key_field
+        key_field: (string): a column in the CSV file at `table_path` that
+            can uniquely identify each row in the table.
+        to_lower (bool): if True, converts all unicode in the CSV,
+            including headers and values to lowercase, otherwise uses raw
+            string values.
+        warn_if_missing (bool): If True, warnings are logged if there are
+            empty headers or value rows.
+
+    Returns:
+        lookup_dict (dict): a dictionary of the form {
+                key_field_0: {csv_header_0: value0, csv_header_1: value1...},
+                key_field_1: {csv_header_0: valuea, csv_header_1: valueb...}
+            }
+
+        if `to_lower` all strings including key_fields and values are
+        converted to lowercase unicode.
+
+    """
+    # Check if the file encoding is UTF-8 BOM first, related to issue
+    # https://bitbucket.org/natcap/invest/issues/3832/invest-table-parsing-does-not-support-utf
+    encoding = None
+    with open(table_path) as file_obj:
+        first_line = file_obj.readline()
+        if first_line.startswith('\xef\xbb\xbf'):
+            encoding = 'utf-8-sig'
+    table = pandas.read_csv(
+        table_path, sep=None, engine='python', encoding=encoding)
+    header_row = list(table)
+    try:  # no unicode() in python 3
+        key_field = unicode(key_field)
+    except NameError:
+        pass
+    if to_lower:
+        key_field = key_field.lower()
+        header_row = [
+            x if not isinstance(x, str) else x.lower()
+            for x in header_row]
+
+    if key_field not in header_row:
+        raise ValueError(
+            '%s expected in %s for the CSV file at %s' % (
+                key_field, header_row, table_path))
+    if warn_if_missing and '' in header_row:
+        LOGGER.warn(
+            "There are empty strings in the header row at %s", table_path)
+
+    key_index = header_row.index(key_field)
+    lookup_dict = {}
+    for index, row in table.iterrows():
+        if to_lower:
+            row = pandas.Series([
+                x if not isinstance(x, str) else x.lower()
+                for x in row])
+        # check if every single element in the row is null
+        if row.isnull().values.all():
+            LOGGER.warn(
+                "Encountered an entirely blank row on line %d", index+2)
+            continue
+        if row.isnull().values.any():
+            row = row.fillna('')
+        lookup_dict[row[key_index]] = dict(zip(header_row, row))
+    return lookup_dict
 
 if __name__ == '__main__':
     main()
