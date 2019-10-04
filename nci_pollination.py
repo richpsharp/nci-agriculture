@@ -2,7 +2,8 @@
 Pollination analysis for NCI project. This is based off the IPBES-Pollination
 project so that Peter can run specific landcover maps with given price data.
 """
-import subprocess
+import collections
+import csv
 import shutil
 import multiprocessing
 import sys
@@ -100,9 +101,24 @@ def main():
     crop_prices_task.join()
     country_iso_gpkg_task.join()
 
-    iso_to_crop_price_map = build_lookup_from_csv(
-        crop_prices_path, 'ISO3', to_lower=True, warn_if_missing=True)
-    LOGGER.debug(iso_to_crop_price_map)
+    country_crop_price_map = collections.defaultdict(
+        lambda: collections.defaultdict(dict))
+    LOGGER.debug('parse crop prices table')
+    with open(crop_prices_path, 'r') as crop_prices_file:
+        csv_reader = csv.DictReader(crop_prices_file)
+        for row in csv_reader:
+            price_list = [row[year] for year in [
+                '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
+            if price_list:
+                country_crop_price_map[
+                    row['ISO3']][row['earthstat_filename_prefix']] = float(
+                        price_list[0])
+
+    country_iso_vector = gdal.OpenEx(country_iso_gpkg_path, gdal.OF_VECTOR)
+    country_iso_layer = country_iso_vector.GetLayer()
+    for country_feature in country_iso_layer:
+        country_iso_name = country_feature.GetField('iso3')
+
     return
 
 
