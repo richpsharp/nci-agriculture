@@ -1177,7 +1177,8 @@ def total_price_yield_op(
             crop_array[valid_mask] * harea_array[valid_mask] *
             pollination_yield_factor_list[crop_index])
     scaling_mask = total_area_array != 0
-    scaling_factor = total_area_array[scaling_mask] / (
+    scaling_factor = numpy.zeros(result.shape)
+    scaling_factor[scaling_mask] = total_area_array[scaling_mask] / (
         total_area_if_price_array[scaling_mask])
     result[~all_valid] = yield_nodata
     # this line rescales the prices in case there are zero prices that should
