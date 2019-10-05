@@ -1159,7 +1159,7 @@ def total_price_yield_op(
     result[:] = 0.0
     all_valid = numpy.zeros(result.shape, dtype=numpy.bool)
 
-    n_crops = len(crop_yield_harea_price_array_list) // 2
+    n_crops = len(crop_yield_harea_price_array_list) // 3
     total_area_array = numpy.zeros(result.shape)
     total_area_if_price_array = numpy.zeros(result.shape)
 
