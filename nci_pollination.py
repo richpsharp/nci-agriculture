@@ -2,6 +2,7 @@
 Pollination analysis for NCI project. This is based off the IPBES-Pollination
 project so that Peter can run specific landcover maps with given price data.
 """
+import multiprocessing
 import argparse
 import re
 import collections
@@ -45,7 +46,7 @@ logging.basicConfig(
         ' [%(pathname)s.%(funcName)s:%(lineno)d] %(message)s'),
     stream=sys.stdout)
 LOGGER = logging.getLogger('nci_pollination')
-logging.getLogger('taskgraph').setLevel(logging.ERROR)
+logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 _MULT_NODATA = -1
 # the following are the globio landcover codes. A tuple (x, y) indicates the
@@ -66,7 +67,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = -1 #max(1, multiprocessing.cpu_count())
+N_WORKERS = max(1, multiprocessing.cpu_count())
 
 CROP_PRICES_URL = 'https://storage.googleapis.com/nci-ecoshards/prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv'
 COUNTRY_ISO_GPKG_URL = 'https://storage.googleapis.com/nci-ecoshards/country_shapefile-20191004T192454Z-001_md5_4eb621c6c74707f038d9ac86a4f2b662.gpkg'
@@ -146,6 +147,7 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
+    task_graph.join()
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
@@ -169,7 +171,6 @@ def calculate_for_landcover(landcover_path):
             crop_nutrient_url, crop_nutrient_table_path),
         target_path_list=[crop_nutrient_table_path],
         task_name=f'fetch {os.path.basename(crop_nutrient_table_path)}')
-
 
     ######### DO crop value here
     target_10km_value_yield_path = os.path.join(
@@ -197,9 +198,33 @@ def calculate_for_landcover(landcover_path):
         task_name=f"""create prod raster {
             os.path.basename(target_10s_value_path)}""")
 
-    task_graph.join()
-    task_graph.close()
-    return
+    # do poll dep value
+    target_10km_prod_dep_value_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
+        f'monfreda_2008_prod_dep_value_yield_total_10km.tif')
+    target_10s_prod_dep_value_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
+        f'monfreda_2008_prod_dep_value_yield_total_10s.tif')
+    target_10s_prod_dep_value_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_prod_dep_value_rasters',
+        f'monfreda_2008_prod_dep_value_total_10s.tif')
+    prod_dep_value_total_task = task_graph.add_task(
+        func=create_value_rasters,
+        args=(
+             crop_nutrient_table_path,
+             yield_and_harea_raster_dir, CHURN_DIR, True, landcover_path,
+             target_10km_prod_dep_value_yield_path,
+             target_10s_prod_dep_value_yield_path,
+             target_10s_prod_dep_value_path),
+        target_path_list=[
+            target_10km_prod_dep_value_yield_path,
+            target_10s_prod_dep_value_yield_path,
+            target_10s_prod_dep_value_path],
+        dependent_task_list=[
+            yield_and_harea_task,
+            crop_nutrient_table_fetch_task],
+        task_name=f"""create prod dep value raster {
+            os.path.basename(target_10s_prod_dep_value_path)}""")
 
     ########## Now pollination
 
@@ -284,11 +309,6 @@ def calculate_for_landcover(landcover_path):
         args=(0.00277778, 2000., kernel_raster_path),
         target_path_list=[kernel_raster_path],
         task_name='make convolution kernel')
-
-    prod_poll_dep_realized_1d_task_path_map = {}
-    prod_poll_dep_unrealized_1d_task_path_map = {}
-    prod_total_realized_1d_task_path_map = {}
-    # mask landcover into agriculture and pollinator habitat
 
     # This loop is so we don't duplicate code for 'ag' and 'hab' with the
     # only difference being the lulc codes and prefix
@@ -394,9 +414,6 @@ def calculate_for_landcover(landcover_path):
             dependent_task_list=[tot_prod_task, ag_task_path_tuple[0]],
             task_name=(
                 f'tot_prod_{nut_id}_10s_{landcover_key}'))
-        schedule_aggregate_to_degree(
-            task_graph, prod_total_potential_path, numpy.sum,
-            prod_total_potential_task)
 
         poll_dep_prod_task, poll_dep_prod_path = (
             poll_dep_prod_nut_10s_task_path_map[nut_id])
@@ -416,11 +433,6 @@ def calculate_for_landcover(landcover_path):
             task_name=(
                 f'poll_dep_prod_{nut_id}_'
                 f'10s_{landcover_key}'))
-        (prod_poll_dep_potential_nut_scenario_1d_task,
-         prod_poll_dep_potential_nut_scenario_1d_path) = (
-            schedule_aggregate_to_degree(
-                task_graph, prod_poll_dep_potential_nut_scenario_path,
-                numpy.sum, prod_poll_dep_potential_nut_scenario_task))
 
         # pollination independent
         prod_poll_indep_nut_scenario_path = os.path.join(
@@ -440,9 +452,6 @@ def calculate_for_landcover(landcover_path):
             task_name=(
                 f'prod_poll_indep_{nut_id}_'
                 f'10s_{landcover_key}'))
-        schedule_aggregate_to_degree(
-            task_graph, prod_poll_indep_nut_scenario_path,
-            numpy.sum, prod_poll_indep_nut_scenario_task)
 
         # prod_poll_dep_realized_en|va|fo_10s|1d_cur|ssp1|ssp3|ssp5:
         # pollination-dependent annual production of energy (KJ/yr),
@@ -464,16 +473,6 @@ def calculate_for_landcover(landcover_path):
             task_name=(
                 f'prod_poll_dep_realized_{nut_id}_'
                 f'10s_{landcover_key}'))
-
-        (prod_poll_dep_realized_1d_task,
-         prod_poll_dep_realized_nut_scenario_1d_path) = (
-            schedule_aggregate_to_degree(
-                task_graph, prod_poll_dep_realized_nut_scenario_path,
-                numpy.sum, prod_poll_dep_realized_nut_scenario_task))
-        prod_poll_dep_realized_1d_task_path_map[
-            (landcover_key, nut_id)] = (
-                prod_poll_dep_realized_1d_task,
-                prod_poll_dep_realized_nut_scenario_1d_path)
 
         # calculate prod_poll_dep_unrealized X1 as
         # prod_total - prod_poll_dep_realized
@@ -498,15 +497,6 @@ def calculate_for_landcover(landcover_path):
             task_name=f'''prod poll dep unrealized: {
                 os.path.basename(
                     prod_poll_dep_unrealized_nut_scenario_path)}''')
-        (prod_poll_dep_unrealized_nut_scenario_1d_task,
-         prod_poll_dep_unrealized_nut_scenario_1d_path) = (
-            schedule_aggregate_to_degree(
-                task_graph, prod_poll_dep_unrealized_nut_scenario_path,
-                numpy.sum, prod_poll_dep_unrealized_nut_scenario_task))
-        prod_poll_dep_unrealized_1d_task_path_map[
-            (landcover_key, nut_id)] = (
-                prod_poll_dep_unrealized_nut_scenario_1d_task,
-                prod_poll_dep_unrealized_nut_scenario_1d_path)
 
         # calculate prod_total_realized as
         #   prod_total_potential - prod_poll_dep_unrealized
@@ -531,15 +521,125 @@ def calculate_for_landcover(landcover_path):
             task_name=f'''prod poll dep unrealized: {
                 os.path.basename(
                     prod_total_realized_nut_scenario_path)}''')
-        (prod_total_realized_nut_1d_scenario_task,
-         prod_total_realized_nut_1d_scenario_path) = (
-            schedule_aggregate_to_degree(
-                task_graph, prod_total_realized_nut_scenario_path,
-                numpy.sum, prod_total_realized_nut_scenario_task))
-        prod_total_realized_1d_task_path_map[
-            (landcover_key, nut_id)] = (
-                prod_total_realized_nut_1d_scenario_task,
-                prod_total_realized_nut_1d_scenario_path)
+
+    # make prod poll dep value now:
+    # tot_prod_en|va|fo_10s|1d_cur|ssp1|ssp3|ssp5
+    # total annual production of energy (KJ/yr), vitamin A (IU/yr),
+    # and folate (mg/yr)
+    value_total_potential_path = os.path.join(
+        output_dir, f'''value_total_potential_10s_{landcover_key}.tif''')
+    value_total_potential_task = task_graph.add_task(
+        func=mult_rasters,
+        args=(
+            ag_task_path_tuple[1], target_10s_value_path,
+            value_total_potential_path),
+        target_path_list=[value_total_potential_path],
+        dependent_task_list=[value_total_task, ag_task_path_tuple[0]],
+        task_name=(
+            f'tot_value_10s_{landcover_key}'))
+
+    value_poll_dep_potential_scenario_path = os.path.join(
+        output_dir,
+        f'value_poll_dep_potential_10s_'
+        f'{landcover_key}.tif')
+    value_poll_dep_potential_scenario_task = task_graph.add_task(
+        func=mult_rasters,
+        args=(
+            ag_task_path_tuple[1], target_10s_prod_dep_value_path,
+            value_poll_dep_potential_scenario_path),
+        target_path_list=[value_poll_dep_potential_scenario_path],
+        dependent_task_list=[
+            prod_dep_value_total_task, ag_task_path_tuple[0]],
+        task_name=(
+            f'value_dep_prod_10s_{landcover_key}'))
+
+    # pollination independent
+    value_poll_indep_scenario_path = os.path.join(
+        output_dir,
+        f'value_poll_indep_10s_'
+        f'{landcover_key}.tif')
+    _ = task_graph.add_task(
+        func=subtract_2_rasters,
+        args=(
+            value_total_potential_path,
+            value_poll_dep_potential_scenario_path,
+            value_poll_indep_scenario_path),
+        target_path_list=[value_poll_indep_scenario_path],
+        dependent_task_list=[
+            value_total_potential_task,
+            value_poll_dep_potential_scenario_task],
+        task_name=(
+            f'value_poll_indep_'
+            f'10s_{landcover_key}'))
+
+    # prod_poll_dep_realized_en|va|fo_10s|1d_cur|ssp1|ssp3|ssp5:
+    # pollination-dependent annual production of energy (KJ/yr),
+    # vitamin A (IU/yr), and folate (mg/yr) that can be met by wild
+    # pollinators due to the proximity of sufficient habitat.
+    value_poll_dep_realized_scenario_path = os.path.join(
+        output_dir,
+        f'value_poll_dep_realized_10s_'
+        f'{landcover_key}.tif')
+    value_poll_dep_realized_scenario_task = task_graph.add_task(
+        func=mult_rasters,
+        args=(
+            value_poll_dep_potential_scenario_path,
+            pollinator_suff_hab_path,
+            value_poll_dep_realized_scenario_path),
+        target_path_list=[value_poll_dep_realized_scenario_path],
+        dependent_task_list=[
+            poll_suff_task, value_poll_dep_potential_scenario_task],
+        task_name=(
+            f'value_poll_dep_realized_'
+            f'10s_{landcover_key}'))
+
+    # calculate value_poll_dep_unrealized X1 as
+    # value_total - value_poll_dep_realized
+    value_poll_dep_unrealized_scenario_path = os.path.join(
+        output_dir,
+        f'value_poll_dep_unrealized_10s_'
+        f'{landcover_key}.tif')
+    value_poll_dep_unrealized_scenario_task = task_graph.add_task(
+        func=pygeoprocessing.raster_calculator,
+        args=([
+            (value_poll_dep_potential_scenario_path, 1),
+            (value_poll_dep_realized_scenario_path, 1),
+            (_MULT_NODATA, 'raw'),
+            (_MULT_NODATA, 'raw'),
+            (_MULT_NODATA, 'raw')], sub_two_op,
+            value_poll_dep_unrealized_scenario_path,
+            gdal.GDT_Float32, -1),
+        target_path_list=[value_poll_dep_unrealized_scenario_path],
+        dependent_task_list=[
+            value_poll_dep_realized_scenario_task,
+            value_poll_dep_potential_scenario_task],
+        task_name=f'''prod poll dep unrealized: {
+            os.path.basename(
+                value_poll_dep_unrealized_scenario_path)}''')
+
+    # calculate value_total_realized as
+    #   value_total_potential - value_poll_dep_unrealized
+    value_total_realized_scenario_path = os.path.join(
+        output_dir,
+        f'value_total_realized_10s_'
+        f'{landcover_key}.tif')
+    value_total_realized_scenario_task = task_graph.add_task(
+        func=pygeoprocessing.raster_calculator,
+        args=([
+            (value_total_potential_path, 1),
+            (value_poll_dep_unrealized_scenario_path, 1),
+            (_MULT_NODATA, 'raw'),
+            (_MULT_NODATA, 'raw'),
+            (_MULT_NODATA, 'raw')], sub_two_op,
+            value_total_realized_scenario_path,
+            gdal.GDT_Float32, _MULT_NODATA),
+        target_path_list=[value_total_realized_scenario_path],
+        dependent_task_list=[
+            value_poll_dep_unrealized_scenario_task,
+            value_total_potential_task],
+        task_name=f'''prod poll dep unrealized: {
+            os.path.basename(
+                value_total_realized_scenario_path)}''')
 
     task_graph.close()
     task_graph.join()
@@ -924,43 +1024,6 @@ def create_radial_convolution_mask(
     kernel_band = kernel_raster.GetRasterBand(1)
     kernel_band.SetNoDataValue(NODATA)
     kernel_band.WriteArray(normalized_kernel_array)
-
-
-def google_bucket_fetch_and_validate(url, json_key_path, target_path):
-    """Create a function to download a Google Blob to a given path.
-
-    Parameters:
-        url (string): url to blob, matches the form
-            '^https://storage.cloud.google.com/([^/]*)/(.*)$'
-        json_key_path (string): path to Google Cloud private key generated by
-        https://cloud.google.com/iam/docs/creating-managing-service-account-keys
-        target_path (string): path to target file.
-
-    Returns:
-        a function with a single `path` argument to the target file. Invoking
-            this function will download the Blob to `path`.
-
-    """
-    url_matcher = re.match(
-        r'^https://[^/]*\.com/([^/]*)/(.*)$', url)
-    LOGGER.debug(url)
-    client = google.cloud.storage.client.Client.from_service_account_json(
-        json_key_path)
-    bucket_id = url_matcher.group(1)
-    LOGGER.debug(f'parsing bucket {bucket_id} from {url}')
-    bucket = client.get_bucket(bucket_id)
-    blob_id = url_matcher.group(2)
-    LOGGER.debug(f'loading blob {blob_id} from {url}')
-    blob = google.cloud.storage.Blob(
-        blob_id, bucket, chunk_size=2**24)
-    LOGGER.info(f'downloading blob {target_path} from {url}')
-    try:
-        os.makedirs(os.path.dirname(target_path))
-    except os.error:
-        pass
-    blob.download_to_filename(target_path)
-    if not reproduce.valid_hash(target_path, 'embedded'):
-        raise ValueError(f"{target_path}' does not match its expected hash")
 
 
 def threshold_select_raster(
@@ -1492,146 +1555,6 @@ def add_op(target_nodata, *array_list):
         result[local_valid_mask] += array[local_valid_mask]
     result[~valid_mask] = target_nodata
     return result
-
-
-def schedule_sum_and_aggregate(
-        task_graph, base_raster_path_list, aggregate_func,
-        base_raster_task_list, target_10s_path):
-    """Sum all rasters in `base_raster_path` and aggregate to degree."""
-    path_list = [(path, 1) for path in base_raster_path_list]
-
-    # this is the only way to get around that we need to check raster size
-    for task in base_raster_task_list:
-        task.join()
-
-    raster_size_set = set(
-        [pygeoprocessing.get_raster_info(path)['raster_size']
-         for path in base_raster_path_list])
-
-    dependent_task_list = list(base_raster_task_list)
-    if len(raster_size_set) > 1:
-        aligned_path_list = [
-            target_10s_path + os.path.basename(path) + '_aligned.tif'
-            for path in base_raster_path_list]
-        align_task = task_graph.add_task(
-            func=pygeoprocessing.align_and_resize_raster_stack,
-            args=(
-                base_raster_path_list,
-                aligned_path_list,
-                ['near'] * len(base_raster_path_list),
-                pygeoprocessing.get_raster_info(
-                    base_raster_task_list[0])['pixel_size'], 'intersection'),
-            target_path_list=aligned_path_list,
-            task_name='align base rasters for %s' % os.path.basename(
-                target_10s_path))
-        dependent_task_list.append(align_task)
-        path_list = [(path, 1) for path in aligned_path_list]
-    target_nodata = -9999.
-
-    add_raster_task = task_graph.add_task(
-        func=pygeoprocessing.raster_calculator,
-        args=(
-            [(target_nodata, 'raw')] + path_list, add_op, target_10s_path,
-            gdal.GDT_Float32, target_nodata),
-        target_path_list=[target_10s_path],
-        dependent_task_list=dependent_task_list,
-        task_name=f'add rasters {os.path.basename(target_10s_path)}')
-
-    return schedule_aggregate_to_degree(
-        task_graph, target_10s_path, aggregate_func, add_raster_task)
-
-
-def schedule_aggregate_to_degree(
-        task_graph, base_raster_path, aggregate_func, base_raster_task,
-        target_raster_path_name=None):
-    """Schedule an aggregate of 1D approximation."""
-    if not target_raster_path_name:
-        one_degree_raster_path = (
-            base_raster_path.replace('_10s_', '_1d_').replace(
-                '_30s_', '_1d_'))
-    else:
-        one_degree_raster_path = target_raster_path_name
-    one_degree_task = task_graph.add_task(
-        func=aggregate_to_degree,
-        args=(base_raster_path, aggregate_func, one_degree_raster_path),
-        target_path_list=[one_degree_raster_path],
-        dependent_task_list=[base_raster_task],
-        task_name=f'to degree {os.path.basename(one_degree_raster_path)}')
-    return (one_degree_task, one_degree_raster_path)
-
-
-def aggregate_to_degree(raster_path, aggregate_func, target_path):
-    """Aggregate input raster to a degree.
-
-    Parameters:
-        base_raster_path (string): path to a WGS84 projected raster.
-        target_path (string): path to desired target raster that will be
-            an aggregated version of `base_raster_path` by the function
-            `aggregate_func`.
-
-    Returns:
-        None.
-
-    """
-    base_raster = gdal.OpenEx(raster_path, gdal.OF_RASTER)
-    base_gt = base_raster.GetGeoTransform()
-    base_band = base_raster.GetRasterBand(1)
-    base_nodata = base_band.GetNoDataValue()
-
-    wgs84sr = osr.SpatialReference()
-    wgs84sr.ImportFromEPSG(4326)
-
-    driver = gdal.GetDriverByName('GTiff')
-    n_rows = int(
-        abs((base_gt[5] * base_band.YSize) / 1.0))
-    n_cols = int(
-        abs((base_gt[1] * base_band.XSize) / -1.0))
-    target_raster = driver.Create(
-        target_path, n_cols, n_rows, 1, gdal.GDT_Float32)
-    target_raster.SetProjection(wgs84sr.ExportToWkt())
-    degree_geotransform = [base_gt[0], 1., 0., base_gt[3], 0., -1.]
-    target_raster.SetGeoTransform(degree_geotransform)
-    target_band = target_raster.GetRasterBand(1)
-    target_band.SetNoDataValue(base_nodata)
-    target_band.Fill(base_nodata)
-
-    base_y_winsize = int(round(abs(1. / base_gt[5])))
-    base_x_winsize = int(round(abs(1. / base_gt[1])))
-
-    last_time = time.time()
-    for row_index in range(n_rows):
-        lat_coord = (
-            degree_geotransform[3] + degree_geotransform[5] * row_index)
-        base_y_coord = int((lat_coord - base_gt[3]) / base_gt[5])
-        target_y_coord = int(
-            (lat_coord - degree_geotransform[3]) / degree_geotransform[5])
-        for col_index in range(n_cols):
-            long_coord = (
-                degree_geotransform[0] + degree_geotransform[1] * col_index)
-            base_x_coord = int((long_coord - base_gt[0]) / base_gt[1])
-            target_x_coord = int(
-                (long_coord - degree_geotransform[0]) / degree_geotransform[1])
-
-            base_array = base_band.ReadAsArray(
-                xoff=base_x_coord, yoff=base_y_coord,
-                win_xsize=base_x_winsize, win_ysize=base_y_winsize)
-            valid_array = ~numpy.isclose(base_array, base_nodata)
-            if valid_array.any():
-                target_band.WriteArray(
-                    numpy.array([[aggregate_func(base_array[valid_array])]]),
-                    xoff=target_x_coord, yoff=target_y_coord)
-
-            current_time = time.time()
-            if (current_time - last_time) > 5.0:
-                LOGGER.info(
-                    "%.2f%% complete", 100.0 * float(row_index+1) / n_rows)
-                last_time = current_time
-    target_band.FlushCache()
-    target_band = None
-    target_raster = None
-    base_band = None
-    base_raster = None
-    LOGGER.info("100%% complete")
 
 
 def sum_num_sum_denom(
