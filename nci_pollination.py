@@ -147,7 +147,7 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
-    price_raster_task_list.append(price_raster_task)
+        price_raster_task_list.append(price_raster_task)
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
