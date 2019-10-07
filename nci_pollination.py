@@ -46,7 +46,7 @@ logging.basicConfig(
         ' [%(pathname)s.%(funcName)s:%(lineno)d] %(message)s'),
     stream=sys.stdout)
 LOGGER = logging.getLogger('nci_pollination')
-logging.getLogger('taskgraph').setLevel(logging.DEBUG)
+logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 _MULT_NODATA = -1
 # the following are the globio landcover codes. A tuple (x, y) indicates the
@@ -145,8 +145,6 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
-        price_raster_task.join()
-        return
     task_graph.join()
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
