@@ -121,6 +121,9 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[zip_touch_file_path],
         task_name='download and unzip yield and harea')
 
+    # need to download everything before we can iterate through it
+    task_graph.join()
+
     yield_and_harea_raster_dir = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 
