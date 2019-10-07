@@ -6,7 +6,6 @@ import pickle
 import multiprocessing
 import argparse
 import re
-import collections
 import csv
 import shutil
 import glob
@@ -1834,17 +1833,19 @@ def create_price_raster(
 
 def parse_country_prices(price_table_path, pickle_table_path):
     """Parse out country prices and pickle to a file."""
-    country_crop_price_map = collections.defaultdict(
-        lambda: collections.defaultdict(dict))
+    country_crop_price_map = {}
     LOGGER.debug('parse crop prices table')
     with open(price_table_path, 'r') as crop_prices_file:
         csv_reader = csv.DictReader(crop_prices_file)
         for row in csv_reader:
             price_list = [row[year] for year in [
                 '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
+            country_id = row['ISO3']
+            if country_id not in country_crop_price_map:
+                country_crop_price_map[country_id] = {}
             if price_list:
                 country_crop_price_map[
-                    row['ISO3']][row['earthstat_filename_prefix']] = float(
+                    country_id][row['earthstat_filename_prefix']] = float(
                         price_list[0])
     with open(pickle_table_path, 'wb') as pickle_table_file:
         pickle.dump(country_crop_price_map, pickle_table_file)
