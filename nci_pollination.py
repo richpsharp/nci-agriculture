@@ -124,13 +124,15 @@ def calculate_for_landcover(landcover_path):
     yield_and_harea_raster_dir = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 
+    price_raster_task_list = []
     for yield_raster_path in glob.glob(os.path.join(
             yield_and_harea_raster_dir, '*_yield.tif')):
         crop_name = re.match(
             '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
         LOGGER.debug(crop_name)
+        crop_price_dir = os.path.join(CHURN_DIR, 'crop_prices')
         crop_price_raster_path = os.path.join(
-            CHURN_DIR, '%s_price.tif' % crop_name)
+            crop_price_dir, '%s_price.tif' % crop_name)
         price_raster_task = task_graph.add_task(
             func=create_price_raster,
             args=(
@@ -142,8 +144,7 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
-    LOGGER.debug('waiting for prices to create')
-    task_graph.join()
+    price_raster_task_list.append(price_raster_task)
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
@@ -182,7 +183,7 @@ def calculate_for_landcover(landcover_path):
         func=create_value_rasters,
         args=(
              crop_nutrient_table_path,
-             yield_and_harea_raster_dir, CHURN_DIR, False, landcover_path,
+             yield_and_harea_raster_dir, crop_price_dir, False, landcover_path,
              target_10km_value_yield_path, target_10s_value_yield_path,
              target_10s_value_path),
         target_path_list=[
@@ -190,7 +191,7 @@ def calculate_for_landcover(landcover_path):
             target_10s_value_path],
         dependent_task_list=[
             yield_and_harea_task,
-            crop_nutrient_table_fetch_task],
+            crop_nutrient_table_fetch_task] + price_raster_task_list,
         task_name=f"""create prod raster {
             os.path.basename(target_10s_value_path)}""")
 
@@ -208,7 +209,7 @@ def calculate_for_landcover(landcover_path):
         func=create_value_rasters,
         args=(
              crop_nutrient_table_path,
-             yield_and_harea_raster_dir, CHURN_DIR, True, landcover_path,
+             yield_and_harea_raster_dir, crop_price_dir, True, landcover_path,
              target_10km_prod_dep_value_yield_path,
              target_10s_prod_dep_value_yield_path,
              target_10s_prod_dep_value_path),
@@ -218,7 +219,7 @@ def calculate_for_landcover(landcover_path):
             target_10s_prod_dep_value_path],
         dependent_task_list=[
             yield_and_harea_task,
-            crop_nutrient_table_fetch_task],
+            crop_nutrient_table_fetch_task] + price_raster_task_list,
         task_name=f"""create prod dep value raster {
             os.path.basename(target_10s_prod_dep_value_path)}""")
 
