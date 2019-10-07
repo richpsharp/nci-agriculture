@@ -318,7 +318,7 @@ def calculate_for_landcover(landcover_path):
         mask_key = f'{landcover_key}_{mask_prefix}_mask'
         mask_target_path = os.path.join(
             CHURN_DIR, f'{mask_prefix}_mask',
-            f'{mask_key}_{landcover_key}.tif')
+            f'{mask_key}.tif')
 
         mask_task = task_graph.add_task(
             func=mask_raster,
