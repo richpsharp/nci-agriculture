@@ -46,7 +46,7 @@ logging.basicConfig(
         ' [%(pathname)s.%(funcName)s:%(lineno)d] %(message)s'),
     stream=sys.stdout)
 LOGGER = logging.getLogger('nci_pollination')
-logging.getLogger('taskgraph').setLevel(logging.INFO)
+logging.getLogger('taskgraph').setLevel(logging.DEBUG)
 
 _MULT_NODATA = -1
 # the following are the globio landcover codes. A tuple (x, y) indicates the
