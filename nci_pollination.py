@@ -1794,6 +1794,8 @@ def create_price_raster(
         None.
 
     """
+    LOGGER.debug(
+        'starting rasterization of %s', target_crop_price_raster_path)
     with open(country_crop_price_pickle_path, 'rb') as country_crop_pickle_file:
         country_crop_price_map = pickle.load(country_crop_pickle_file)
     pygeoprocessing.new_raster_from_base(
