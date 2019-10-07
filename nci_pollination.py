@@ -142,6 +142,7 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
+    LOGGER.debug('waiting for prices to create')
     task_graph.join()
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
@@ -196,13 +197,13 @@ def calculate_for_landcover(landcover_path):
     # do poll dep value
     target_10km_prod_dep_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
-        f'monfreda_2008_prod_dep_value_yield_total_10km.tif')
+        f'monfreda_2008_prod_dep_value_yield_total_10km_%s.tif' % landcover_key)
     target_10s_prod_dep_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
-        f'monfreda_2008_prod_dep_value_yield_total_10s.tif')
+        f'monfreda_2008_prod_dep_value_yield_total_10s_%s.tif' % landcover_key)
     target_10s_prod_dep_value_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_prod_dep_value_rasters',
-        f'monfreda_2008_prod_dep_value_total_10s.tif')
+        f'monfreda_2008_prod_dep_value_total_10s_%s.tif' % landcover_key)
     prod_dep_value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
