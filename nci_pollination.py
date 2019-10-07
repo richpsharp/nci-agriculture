@@ -246,13 +246,13 @@ def calculate_for_landcover(landcover_path):
         # total annual production of nutrient
         yield_total_nut_10km_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_nutrient_rasters',
-            f'monfreda_2008_yield_total_{nut_id}_10km.tif')
+            f'monfreda_2008_yield_total_{nut_id}_10km_%s.tif' % landcover_key)
         yield_total_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_nutrient_rasters',
-            f'monfreda_2008_yield_total_{nut_id}_10s.tif')
+            f'monfreda_2008_yield_total_{nut_id}_10s_%s.tif' % landcover_key)
         prod_total_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_prod_nutrient_rasters',
-            f'monfreda_2008_prod_total_{nut_id}_10s.tif')
+            f'monfreda_2008_prod_total_{nut_id}_10s_%s.tif' % landcover_key)
 
         prod_total_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
@@ -275,13 +275,13 @@ def calculate_for_landcover(landcover_path):
         # pollination-dependent annual production of nutrient
         poll_dep_yield_nut_10km_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_poll_dep_rasters',
-            f'monfreda_2008_yield_poll_dep_{nut_id}_10km.tif')
+            f'monfreda_2008_yield_poll_dep_{nut_id}_10km_%s.tif' % landcover_key)
         poll_dep_yield_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_poll_dep_rasters',
-            f'monfreda_2008_yield_poll_dep_{nut_id}_10s.tif')
+            f'monfreda_2008_yield_poll_dep_{nut_id}_10s_%s.tif' % landcover_key)
         poll_dep_prod_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_prod_poll_dep_rasters',
-            f'monfreda_2008_prod_poll_dep_{nut_id}_10s.tif')
+            f'monfreda_2008_prod_poll_dep_{nut_id}_10s_%s.tif' % landcover_key)
         pol_dep_prod_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
             args=(
@@ -317,7 +317,8 @@ def calculate_for_landcover(landcover_path):
             ('ag', GLOBIO_AG_CODES), ('hab', GLOBIO_NATURAL_CODES)]:
         mask_key = f'{landcover_key}_{mask_prefix}_mask'
         mask_target_path = os.path.join(
-            CHURN_DIR, f'{mask_prefix}_mask', f'{mask_key}.tif')
+            CHURN_DIR, f'{mask_prefix}_mask',
+            f'{mask_key}_{landcover_key}.tif')
 
         mask_task = task_graph.add_task(
             func=mask_raster,
