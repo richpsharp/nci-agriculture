@@ -2,6 +2,7 @@
 Pollination analysis for NCI project. This is based off the IPBES-Pollination
 project so that Peter can run specific landcover maps with given price data.
 """
+import pickle
 import multiprocessing
 import argparse
 import re
@@ -96,6 +97,14 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[crop_prices_path],
         task_name='download crop prices')
 
+    crop_prices_pickle_path = os.path.join(CHURN_DIR, 'crop_prices.pickle')
+    crop_prices_pickle_task = task_graph.add_task(
+        func=parse_country_prices,
+        args=(crop_prices_path, crop_prices_pickle_path),
+        target_path_list=[crop_prices_pickle_path],
+        dependent_task_list=[crop_prices_task],
+        task_name='extract crop prices and pickle')
+
     country_iso_gpkg_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
     country_iso_gpkg_task = task_graph.add_task(
@@ -113,19 +122,6 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[zip_touch_file_path],
         task_name='download and unzip yield and harea')
 
-    country_crop_price_map = collections.defaultdict(
-        lambda: collections.defaultdict(dict))
-    LOGGER.debug('parse crop prices table')
-    with open(crop_prices_path, 'r') as crop_prices_file:
-        csv_reader = csv.DictReader(crop_prices_file)
-        for row in csv_reader:
-            price_list = [row[year] for year in [
-                '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
-            if price_list:
-                country_crop_price_map[
-                    row['ISO3']][row['earthstat_filename_prefix']] = float(
-                        price_list[0])
-
     yield_and_harea_raster_dir = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 
@@ -140,8 +136,10 @@ def calculate_for_landcover(landcover_path):
             func=create_price_raster,
             args=(
                 yield_raster_path, country_iso_gpkg_path,
-                country_crop_price_map, crop_name, crop_price_raster_path),
-            dependent_task_list=[yield_and_harea_task, country_iso_gpkg_task],
+                crop_prices_pickle_path, crop_name, crop_price_raster_path),
+            dependent_task_list=[
+                yield_and_harea_task, country_iso_gpkg_task,
+                crop_prices_pickle_task],
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
@@ -1776,7 +1774,7 @@ def download_and_unzip(url, target_dir, target_token_path):
 
 
 def create_price_raster(
-        base_raster_path, country_vector_path, country_crop_price_map,
+        base_raster_path, country_vector_path, country_crop_price_pickle_path,
         crop_name, target_crop_price_raster_path):
     """Rasterize countries as prices.
 
@@ -1786,9 +1784,10 @@ def create_price_raster(
         country_vector_path (str): path to country shapefile that has a
             field called `ISO3` that corresponds to the first key in
             `price_map`.
-        country_crop_price_map (dict): map that indexes country ISO names to
-            `crop_name`. If this crop is not in the subdictionary there is
-            no price for that crop in that country.
+        country_crop_price_pickle_path (str): path to a pickled
+            map that indexes country ISO names to `crop_name`. If this crop
+            is not in the subdictionary there is no price for that crop in
+            that country.
         target_crop_price_raster_path (str): a raster with pixel values
             corresponding to the country in which the pixel resides and
             the price of that crop in the country.
@@ -1797,6 +1796,8 @@ def create_price_raster(
         None.
 
     """
+    with open(country_crop_price_pickle_path, 'rb') as country_crop_pickle_file:
+        country_crop_price_map = pickle.load(country_crop_pickle_file)
     pygeoprocessing.new_raster_from_base(
         base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
         [-1], fill_value_list=[-1])
@@ -1829,6 +1830,24 @@ def create_price_raster(
     gdal.RasterizeLayer(
         target_crop_raster, [1], price_layer,
         options=['ATTRIBUTE=price'])
+
+
+def parse_country_prices(price_table_path, pickle_table_path):
+    """Parse out country prices and pickle to a file."""
+    country_crop_price_map = collections.defaultdict(
+        lambda: collections.defaultdict(dict))
+    LOGGER.debug('parse crop prices table')
+    with open(price_table_path, 'r') as crop_prices_file:
+        csv_reader = csv.DictReader(crop_prices_file)
+        for row in csv_reader:
+            price_list = [row[year] for year in [
+                '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
+            if price_list:
+                country_crop_price_map[
+                    row['ISO3']][row['earthstat_filename_prefix']] = float(
+                        price_list[0])
+    with open(pickle_table_path, 'wb') as pickle_table_file:
+        pickle.dump(country_crop_price_map, pickle_table_file)
 
 
 if __name__ == '__main__':
