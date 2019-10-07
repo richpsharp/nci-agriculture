@@ -335,10 +335,6 @@ def calculate_for_landcover(landcover_path):
         kwargs={
             'working_dir': CHURN_DIR,
             'ignore_nodata': True,
-            'gtiff_creation_options': (
-                'TILED=YES', 'BIGTIFF=YES', 'COMPRESS=DEFLATE',
-                'PREDICTOR=3', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256',
-                'NUM_THREADS=2'),
             'n_threads': 4},
         dependent_task_list=[hab_task_path_tuple[0], kernel_task],
         target_path_list=[pollhab_2km_prop_path],
@@ -1103,10 +1099,7 @@ def mask_raster(base_path, codes, target_path):
 
     pygeoprocessing.raster_calculator(
         [(base_path, 1), (code_list, 'raw')], mask_codes_op, target_path,
-        gdal.GDT_Byte, 2, gtiff_creation_options=(
-            'TILED=YES', 'BIGTIFF=YES', 'COMPRESS=DEFLATE',
-            'PREDICTOR=2', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256',
-            'NUM_THREADS=2'))
+        gdal.GDT_Byte, 2)
 
 
 def unzip_file(zipfile_path, target_dir, touchfile_path):
