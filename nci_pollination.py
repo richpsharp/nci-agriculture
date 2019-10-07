@@ -1830,6 +1830,7 @@ def create_price_raster(
     gdal.RasterizeLayer(
         target_crop_raster, [1], price_layer,
         options=['ATTRIBUTE=price'])
+    LOGGER.debug('finished rasterizing %s' % target_crop_price_raster_path)
 
 
 def parse_country_prices(price_table_path, pickle_table_path):
