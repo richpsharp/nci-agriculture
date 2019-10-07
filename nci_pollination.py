@@ -287,7 +287,8 @@ def calculate_for_landcover(landcover_path):
             target_path_list=[
                 poll_dep_yield_nut_10km_path, poll_dep_yield_nut_10s_path,
                 poll_dep_prod_nut_10s_path],
-            dependent_task_list=[yield_and_harea_task],
+            dependent_task_list=[
+                yield_and_harea_task, crop_nutrient_table_fetch_task],
             task_name=f"""create poll dep production raster {
                 os.path.basename(poll_dep_prod_nut_10s_path)}""")
         poll_dep_prod_nut_10s_task_path_map[nut_id] = (
