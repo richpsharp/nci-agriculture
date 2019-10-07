@@ -1067,10 +1067,7 @@ def threshold_select_raster(
         [(base_raster_path, 1), (select_raster_path, 1),
          (threshold_val, 'raw'), (base_nodata, 'raw'),
          (target_nodata, 'raw')], threshold_select_op,
-        target_path, gdal.GDT_Float32, target_nodata, gtiff_creation_options=(
-            'TILED=YES', 'BIGTIFF=YES', 'COMPRESS=DEFLATE',
-            'PREDICTOR=2', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256',
-            'NUM_THREADS=2'))
+        target_path, gdal.GDT_Float32, target_nodata)
 
 
 def mask_raster(base_path, codes, target_path):
