@@ -113,8 +113,6 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[zip_touch_file_path],
         task_name='download and unzip yield and harea')
 
-    crop_prices_task.join()
-
     country_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(dict))
     LOGGER.debug('parse crop prices table')
@@ -147,6 +145,8 @@ def calculate_for_landcover(landcover_path):
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
+        price_raster_task.join()
+        return
     task_graph.join()
 
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
@@ -175,13 +175,13 @@ def calculate_for_landcover(landcover_path):
     ######### DO crop value here
     target_10km_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_yield_rasters',
-        f'monfreda_2008_value_yield_total_10km.tif')
+        f'monfreda_2008_value_yield_total_10km_%s.tif' % landcover_key)
     target_10s_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_yield_rasters',
-        f'monfreda_2008_value_yield_total_10s.tif')
+        f'monfreda_2008_value_yield_total_10s_%s.tif' % landcover_key)
     target_10s_value_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_rasters',
-        f'monfreda_2008_value_total_10s.tif')
+        f'monfreda_2008_value_total_10s_%s.tif' % landcover_key)
     value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
