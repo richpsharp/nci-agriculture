@@ -1815,7 +1815,9 @@ def create_price_raster(
     price_layer.StartTransaction()
     for country_feature in country_layer:
         country_name = country_feature.GetField('ISO3')
-        if crop_name in country_crop_price_map[country_name]:
+
+        if country_name in country_crop_price_map and (
+                crop_name in country_crop_price_map[country_name]):
             country_geom = country_feature.GetGeometryRef()
             new_feature = ogr.Feature(price_layer_defn)
             new_feature.SetGeometry(country_geom.Clone())
