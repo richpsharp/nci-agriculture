@@ -821,156 +821,6 @@ def subtract_3_rasters(
         sub_op, target_path, gdal.GDT_Float32, target_nodata)
 
 
-def calculate_raster_ratio(
-        raster_a_path, raster_b_path, target_raster_path, clamp_to=None):
-    """Calculate the ratio of a:b and ignore nodata and divide by 0.
-
-    Parameters:
-        raster_a_path (string): path to numerator of ratio
-        raster_b_path (string): path to denominator of ratio
-        target_raster_path (string): path to desired target raster that will
-            use a nodata value of -1.
-        clamp_to (numeric): if not None, the ratio is capped to this value.
-
-    Returns:
-        None.
-
-    """
-    temp_dir = tempfile.mkdtemp()
-    raster_a_aligned_path = os.path.join(
-        temp_dir, os.path.basename(raster_a_path))
-    raster_b_aligned_path = os.path.join(
-        temp_dir, os.path.basename(raster_b_path))
-    target_pixel_size = pygeoprocessing.get_raster_info(
-        raster_a_path)['pixel_size']
-    pygeoprocessing.align_and_resize_raster_stack(
-        [raster_a_path, raster_b_path],
-        [raster_a_aligned_path, raster_b_aligned_path], ['near']*2,
-        target_pixel_size, 'intersection')
-
-    nodata_a = pygeoprocessing.get_raster_info(
-        raster_a_aligned_path)['nodata'][0]
-    nodata_b = pygeoprocessing.get_raster_info(
-        raster_b_aligned_path)['nodata'][0]
-    target_nodata = -1.
-
-    def ratio_op(array_a, array_b):
-        result = numpy.empty(array_a.shape, dtype=numpy.float32)
-        result[:] = target_nodata
-        zero_mask = numpy.isclose(array_b, 0.)
-        valid_mask = (
-            ~numpy.isclose(array_a, nodata_a) &
-            ~numpy.isclose(array_b, nodata_b) &
-            ~zero_mask)
-        result[valid_mask] = array_a[valid_mask] / array_b[valid_mask]
-        if clamp_to:
-            result[valid_mask & (result > clamp_to)] = clamp_to
-        result[zero_mask] = 0.0
-        return result
-
-    pygeoprocessing.raster_calculator(
-        [(raster_a_aligned_path, 1), (raster_b_aligned_path, 1)], ratio_op,
-        target_raster_path, gdal.GDT_Float32, target_nodata)
-
-    shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def warp_to_raster(
-        base_raster_path, canonical_raster_path, resample_method,
-        target_raster_path):
-    """Warp base raster to canonical example.
-
-    Parameters:
-        base_raster_path (str): path to base raster
-        canonical_raster_path (str),
-        resample_method (str): one of nearest, bilinear, cubic, cubic_spline,
-            lanczos, average, mode, max, min, med, q1, q3.
-        target_raster_path (str): path to target warped raster.
-
-    Returns:
-        None.
-
-    """
-    canonical_raster_info = pygeoprocessing.get_raster_info(
-        canonical_raster_path)
-    pygeoprocessing.warp_raster(
-        base_raster_path, canonical_raster_info['pixel_size'],
-        target_raster_path,
-        resample_method, target_bb=canonical_raster_info['bounding_box'],
-        n_threads=2)
-
-
-def calculate_future_pop(
-        cur_ssp_path, fut_ssp_path, gpw_tot_count_path, target_ssp_pop_path):
-    """Calculate future population raster.
-
-    Multiply `gpw_tot_count` by the fut_ssp/cur_ssp ratio.
-    """
-    target_nodata = -1
-    ssp_cur_nodata = pygeoprocessing.get_raster_info(
-        cur_ssp_path)['nodata'][0]
-    ssp_fut_nodata = pygeoprocessing.get_raster_info(
-        fut_ssp_path)['nodata'][0]
-    count_nodata = pygeoprocessing.get_raster_info(
-        gpw_tot_count_path)['nodata'][0]
-
-    def _future_pop_op(cur_array, fut_array, count_array):
-        """Calculate future pop by dividing fut/cur*cur_count."""
-        result = numpy.empty(cur_array.shape, dtype=numpy.float32)
-        result[:] = target_nodata
-        zero_mask = cur_array == 0
-        valid_mask = (
-            (cur_array != ssp_cur_nodata) &
-            (fut_array != ssp_fut_nodata) &
-            (count_array != count_nodata) & ~zero_mask)
-        result[valid_mask] = (
-            (fut_array[valid_mask] / cur_array[valid_mask]).astype(
-                numpy.float32) * count_array[valid_mask])
-        # assume if denominator is 0 we don't want to mask anything out, just
-        # get it working
-        result[zero_mask] = 1.0
-        return result
-
-    pygeoprocessing.raster_calculator(
-        [(cur_ssp_path, 1), (fut_ssp_path, 1), (gpw_tot_count_path, 1)],
-        _future_pop_op, target_ssp_pop_path, gdal.GDT_Float32, target_nodata)
-
-
-def calc_pop_count(gpw_dens_path, gpw_count_path):
-    """Calculate population count from density.
-
-    Parameters:
-        gpw_dens_path (string): path to density raster in units of
-            people / km^2.
-        gpw_count_path (string): path to target raster to generate number of
-            people / pixel.
-
-    """
-    gpw_dens_info = pygeoprocessing.get_raster_info(gpw_dens_path)
-    y_lat_array = numpy.linspace(
-        gpw_dens_info['geotransform'][3],
-        gpw_dens_info['geotransform'][3] +
-        gpw_dens_info['geotransform'][5] *
-        gpw_dens_info['raster_size'][1],
-        gpw_dens_info['raster_size'][1])
-
-    # `area_of_pixel` is in m^2, convert to km^2
-    y_km2_array = area_of_pixel(
-        abs(gpw_dens_info['geotransform'][1]),
-        y_lat_array) * 1e-6
-    y_km2_column = y_km2_array.reshape((y_km2_array.size, 1))
-
-    nodata = gpw_dens_info['nodata'][0]
-    try:
-        os.makedirs(os.path.dirname(gpw_count_path))
-    except OSError:
-        pass
-    pygeoprocessing.raster_calculator(
-        [(gpw_dens_path, 1), y_km2_column, (nodata, 'raw')],
-        density_to_value_op, gpw_count_path, gdal.GDT_Float32,
-        nodata)
-
-
 def create_radial_convolution_mask(
         pixel_size_degree, radius_meters, kernel_filepath):
     """Create a radial mask to sample pixels in convolution filter.
@@ -1356,7 +1206,8 @@ def create_value_rasters(
     pygeoprocessing.warp_raster(
         target_10km_value_yield_path,
         sample_target_raster_info['pixel_size'], target_10s_value_yield_path,
-        'cubicspline', target_bb=sample_target_raster_info['bounding_box'],
+        'cubicspline', target_sr_wkt=sample_target_raster_info['projection'],
+        target_bb=sample_target_raster_info['bounding_box'],
         n_threads=2)
 
     # multiplying the ha_array by 1e4 because the of yield are in
@@ -1460,7 +1311,8 @@ def create_prod_nutrient_raster(
     pygeoprocessing.warp_raster(
         target_10km_yield_path,
         sample_target_raster_info['pixel_size'], target_10s_yield_path,
-        'cubicspline', target_bb=sample_target_raster_info['bounding_box'],
+        'cubicspline', target_sr_wkt=sample_target_raster_info['projection'],
+        target_bb=sample_target_raster_info['bounding_box'],
         n_threads=2)
 
     # multiplying the ha_array by 1e4 because the of yield are in
@@ -1615,72 +1467,6 @@ def prop_diff_op(array_a, array_b, nodata):
         array_b[valid_mask] - array_a[valid_mask]) / (
             array_a[valid_mask] + 1e-12)
     return result
-
-
-def calc_relevant_pop(
-        base_pop_path,
-        prod_poll_indep_en_path, nut_req_en_path,
-        prod_poll_indep_fo_path, nut_req_fo_path,
-        prod_poll_indep_va_path, nut_req_va_path,
-        logic_ufunc, target_raster_path):
-    """This function is meant to duplicate the SQL query that Becky wrote:
-
-    ALTER TABLE relevant_population ADD relevant_pop_cur INTEGER;
-    ALTER TABLE relevant_population ADD relevant_pop_ssp1 INTEGER;
-    ALTER TABLE relevant_population ADD relevant_pop_ssp3 INTEGER;
-    ALTER TABLE relevant_population ADD relevant_pop_ssp5 INTEGER;
-    UPDATE relevant_population SET relevant_pop_cur = cur;
-    UPDATE relevant_population SET relevant_pop_ssp1 = gpw_v4_e_atot_pop_30s_ssp1;
-    UPDATE relevant_population SET relevant_pop_ssp3 = gpw_v4_e_atot_pop_30s_ssp3;
-    UPDATE relevant_population SET relevant_pop_ssp5 = gpw_v4_e_atot_pop_30s_ssp5;
-    UPDATE relevant_population SET relevant_pop_cur = 0 WHERE prod_poll_indep_en_cur > nut_req_en_1d_cur AND prod_poll_indep_fo_cur > nut_req_fo_1d_cur AND prod_poll_indep_va_cur > nut_req_va_1d_cur;
-    UPDATE relevant_population SET relevant_pop_ssp1 = 0 WHERE prod_poll_indep_en_ssp1 > nut_req_en_1d_ssp1 AND prod_poll_indep_fo_ssp1 > nut_req_fo_1d_ssp1 AND prod_poll_indep_va_ssp1 > nut_req_va_1d_ssp1;
-    UPDATE relevant_population SET relevant_pop_ssp3 = 0 WHERE prod_poll_indep_en_ssp3 > nut_req_en_1d_ssp3 AND prod_poll_indep_fo_ssp3 > nut_req_fo_1d_ssp3 AND prod_poll_indep_va_ssp3 > nut_req_va_1d_ssp3;
-    UPDATE relevant_population SET relevant_pop_ssp5 = 0 WHERE prod_poll_indep_en_ssp5 > nut_req_en_1d_ssp5 AND prod_poll_indep_fo_ssp5 > nut_req_fo_1d_ssp5 AND prod_poll_indep_va_ssp5 > nut_req_va_1d_ssp5;
-
-    """
-
-    def relevant_pop_op(
-            base_pop_array,
-            prod_poll_indep_en_array, nut_req_en_array,
-            prod_poll_indep_fo_array, nut_req_fo_array,
-            prod_poll_indep_va_array, nut_req_va_array):
-        result = numpy.copy(base_pop_array)
-        result[
-            logic_ufunc(
-                (prod_poll_indep_en_array > nut_req_en_array),
-                logic_ufunc(
-                    (prod_poll_indep_fo_array > nut_req_fo_array),
-                    (prod_poll_indep_va_array > nut_req_va_array)))] = 0.0
-        return result
-
-    temp_working_dir = tempfile.mkdtemp(
-        dir=os.path.dirname(target_raster_path))
-
-    base_raster_path_list = [
-        base_pop_path,
-        prod_poll_indep_en_path, nut_req_en_path,
-        prod_poll_indep_fo_path, nut_req_fo_path,
-        prod_poll_indep_va_path, nut_req_va_path]
-
-    aligned_raster_path_list = [
-        os.path.join(
-            temp_working_dir, '%s_aligned%s' %
-            os.path.splitext(os.path.basename(path)))
-        for path in base_raster_path_list]
-
-    base_info = pygeoprocessing.get_raster_info(base_pop_path)
-    pygeoprocessing.align_and_resize_raster_stack(
-        base_raster_path_list, aligned_raster_path_list,
-        ['near']*len(base_raster_path_list), base_info['pixel_size'],
-        'intersection')
-
-    pygeoprocessing.raster_calculator(
-        [(path, 1) for path in aligned_raster_path_list],
-        relevant_pop_op, target_raster_path,
-        base_info['datatype'], base_info['nodata'][0])
-
-    shutil.rmtree(temp_working_dir, ignore_errors=True)
 
 
 def build_lookup_from_csv(
