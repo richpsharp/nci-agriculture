@@ -1213,7 +1213,7 @@ def create_value_rasters(
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
     if target_sr.IsProjected():
         pixel_ha = abs(
-            numpy.mult(sample_target_raster_info['pixel_size']) / 1e4)
+            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4)
     else:
         pixel_ha = y_ha_column * 1e4
 
@@ -1325,7 +1325,7 @@ def create_prod_nutrient_raster(
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
     if target_sr.IsProjected():
         pixel_ha = abs(
-            numpy.mult(sample_target_raster_info['pixel_size']) / 1e4)
+            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4)
     else:
         pixel_ha = y_ha_column
 
