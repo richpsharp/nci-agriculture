@@ -1212,15 +1212,15 @@ def create_value_rasters(
 
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
     if target_sr.IsProjected():
-        pixel_ha = abs(
-            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4)
+        pixel_prod_factor = (1e4 * abs(
+            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4), 'raw')
     else:
-        pixel_ha = y_ha_column * 1e4
+        pixel_prod_factor = y_ha_column * 1e4 * 1e4
 
     # multiplying the ha_array by 1e4 because the of yield are in
     # nutrient / 100g and yield is in Mg / ha.
     pygeoprocessing.raster_calculator(
-        [(target_10s_value_yield_path, 1), pixel_ha,
+        [(target_10s_value_yield_path, 1), pixel_prod_factor,
          (yield_nodata, 'raw')], density_to_value_op,
         target_10s_value_path, gdal.GDT_Float32, yield_nodata)
 
@@ -1324,15 +1324,15 @@ def create_prod_nutrient_raster(
 
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
     if target_sr.IsProjected():
-        pixel_ha = abs(
-            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4)
+        pixel_prod_factor = (1e4 * abs(
+            numpy.prod(sample_target_raster_info['pixel_size']) / 1e4), 'raw')
     else:
-        pixel_ha = y_ha_column
+        pixel_prod_factor = y_ha_column * 1e4
 
     # multiplying the ha_array by 1e4 because the of yield are in
     # nutrient / 100g and yield is in Mg / ha.
     pygeoprocessing.raster_calculator(
-        [(target_10s_yield_path, 1), pixel_ha * 1e4,
+        [(target_10s_yield_path, 1), pixel_prod_factor,
          (yield_nodata, 'raw')], density_to_value_op,
         target_10s_production_path, gdal.GDT_Float32, yield_nodata)
 
