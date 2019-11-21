@@ -934,8 +934,9 @@ def threshold_select_raster(
             target_nodata):
         result = numpy.empty(select_array.shape, dtype=numpy.float32)
         result[:] = target_nodata
-        valid_mask = (base_array != base_nodata) & (select_array == 1)
-        result[valid_mask] = numpy.interp(
+        valid_mask = (base_array != base_nodata) & (
+            select_array >= 0) & (select_array <= 1)
+        result[valid_mask] = select_array[valid_mask] * numpy.interp(
             base_array[valid_mask], [0, threshold_val], [0.0, 1.0], 0, 1)
         return result
 
