@@ -82,7 +82,4 @@ for row in unique_names.iterrows():
         '%s=%.2f of global\n\tglobal: (%.2f)\n\t%s: (%.2f)' %
         (group_name, global_avg/local_avg, global_avg, group_name, local_avg))
 
-# for each group,
-#   get list of crops.
-#   get average value of prices
-#   report the difference in scale
+    price_adjustment_rate = global_avg / local_avg
