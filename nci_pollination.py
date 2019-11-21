@@ -336,19 +336,6 @@ def calculate_for_landcover(landcover_path):
 
         mask_task_path_map[mask_prefix] = (mask_task, mask_target_path)
 
-    # blend bmp into hab
-    def fractional_add_op(base_array, new_array, frac_val, nodata):
-        """base+new*frac"""
-        valid_mask = (base_array != nodata) | (new_array != nodata)
-        result = numpy.empty(base_array.shape)
-        result[:] = nodata
-        result = numpy.where(
-            base_array[valid_mask] != nodata,
-            base_array[valid_mask], 0) + numpy.where(
-            new_array[valid_mask] != nodata,
-            new_array[valid_mask], 0)
-        return result
-
     # blend bmp into ag
     for mask_prefix, bmp_frac in [('hab', 0.1), ('ag', 0.9)]:
         mask_key = f'{landcover_key}_{mask_prefix}_bmp_mask'
@@ -1695,6 +1682,20 @@ def parse_country_prices(price_table_path, pickle_table_path):
                         price_list[0])
     with open(pickle_table_path, 'wb') as pickle_table_file:
         pickle.dump(country_crop_price_map, pickle_table_file)
+
+
+# blend bmp into hab
+def fractional_add_op(base_array, new_array, frac_val, nodata):
+    """base+new*frac"""
+    valid_mask = (base_array != nodata) | (new_array != nodata)
+    result = numpy.empty(base_array.shape)
+    result[:] = nodata
+    result[valid_mask] = numpy.where(
+        base_array[valid_mask] != nodata,
+        base_array[valid_mask], 0) + frac_val * numpy.where(
+        new_array[valid_mask] != nodata,
+        new_array[valid_mask], 0)
+    return result
 
 
 if __name__ == '__main__':
