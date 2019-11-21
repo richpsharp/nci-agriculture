@@ -2,33 +2,31 @@
 Pollination analysis for NCI project. This is based off the IPBES-Pollination
 project so that Peter can run specific landcover maps with given price data.
 """
-import pickle
-import multiprocessing
 import argparse
-import re
 import csv
-import shutil
 import glob
-import sys
-import zipfile
-import time
-import os
-import logging
 import itertools
-import tempfile
+import logging
+import multiprocessing
+import os
+import pickle
+import re
+import sys
+import time
+import zipfile
 
-import ecoshard
-import rtree
-import shapely.wkb
-import shapely.prepared
 from osgeo import gdal
 from osgeo import ogr
 from osgeo import osr
-import pandas
+import ecoshard
 import numpy
-import scipy.ndimage.morphology
-import taskgraph
+import pandas
 import pygeoprocessing
+import rtree
+import scipy.ndimage.morphology
+import shapely.prepared
+import shapely.wkb
+import taskgraph
 
 # format of the key pairs is [data suffix]: [landcover raster]
 # these must be ESA landcover map type
@@ -49,6 +47,7 @@ LOGGER = logging.getLogger('nci_pollination')
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 _MULT_NODATA = -1
+_MASK_NODATA = 2
 # the following are the globio landcover codes. A tuple (x, y) indicates the
 # inclusive range from x to y. Pollinator habitat was defined as any natural
 # land covers, as defined (GLOBIO land-cover classes 6, secondary vegetation,
@@ -61,6 +60,7 @@ _MULT_NODATA = -1
 
 GLOBIO_AG_CODES = [2, (10, 40), (230, 232)]
 GLOBIO_NATURAL_CODES = [6, (50, 180)]
+BMP_LULC_CODES = [300]
 
 WORKING_DIR = './nci_pollination_workspace'
 ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
@@ -69,9 +69,17 @@ CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 NODATA = -9999
 N_WORKERS = max(1, multiprocessing.cpu_count())
 
-CROP_PRICES_URL = 'https://storage.googleapis.com/nci-ecoshards/prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv'
-COUNTRY_ISO_GPKG_URL = 'https://storage.googleapis.com/nci-ecoshards/country_shapefile-20191004T192454Z-001_md5_4eb621c6c74707f038d9ac86a4f2b662.gpkg'
-YIELD_AND_HAREA_ZIP_URL = 'https://storage.googleapis.com/nci-ecoshards/ipbes_monfreda_2008_observed_yield_and_harea_md5_49b529f57071cc85abbd02b6e105089b.zip'
+CROP_PRICES_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv')
+COUNTRY_ISO_GPKG_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'country_shapefile-20191004T192454Z-001_'
+    'md5_4eb621c6c74707f038d9ac86a4f2b662.gpkg')
+YIELD_AND_HAREA_ZIP_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'ipbes_monfreda_2008_observed_yield_and_harea_'
+    'md5_49b529f57071cc85abbd02b6e105089b.zip')
 
 
 def calculate_for_landcover(landcover_path):
@@ -172,7 +180,6 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[crop_nutrient_table_path],
         task_name=f'fetch {os.path.basename(crop_nutrient_table_path)}')
 
-    ######### DO crop value here
     target_10km_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_yield_rasters',
         f'monfreda_2008_value_yield_total_10km_%s.tif' % landcover_key)
@@ -201,7 +208,8 @@ def calculate_for_landcover(landcover_path):
     # do poll dep value
     target_10km_prod_dep_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
-        f'monfreda_2008_prod_dep_value_yield_total_10km_%s.tif' % landcover_key)
+        f'monfreda_2008_prod_dep_value_yield_total_10km_%s.tif' %
+        landcover_key)
     target_10s_prod_dep_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
         f'monfreda_2008_prod_dep_value_yield_total_10s_%s.tif' % landcover_key)
@@ -225,10 +233,6 @@ def calculate_for_landcover(landcover_path):
             crop_nutrient_table_fetch_task] + price_raster_task_list,
         task_name=f"""create prod dep value raster {
             os.path.basename(target_10s_prod_dep_value_path)}""")
-
-    ########## Now pollination
-
-
 
     # 1.2.3.  Crop production
 
@@ -275,10 +279,12 @@ def calculate_for_landcover(landcover_path):
         # pollination-dependent annual production of nutrient
         poll_dep_yield_nut_10km_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_poll_dep_rasters',
-            f'monfreda_2008_yield_poll_dep_{nut_id}_10km_%s.tif' % landcover_key)
+            f'monfreda_2008_yield_poll_dep_{nut_id}_10km_%s.tif' %
+            landcover_key)
         poll_dep_yield_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_yield_poll_dep_rasters',
-            f'monfreda_2008_yield_poll_dep_{nut_id}_10s_%s.tif' % landcover_key)
+            f'monfreda_2008_yield_poll_dep_{nut_id}_10s_%s.tif' %
+            landcover_key)
         poll_dep_prod_nut_10s_path = os.path.join(
             CHURN_DIR, 'monfreda_2008_prod_poll_dep_rasters',
             f'monfreda_2008_prod_poll_dep_{nut_id}_10s_%s.tif' % landcover_key)
@@ -311,10 +317,12 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[kernel_raster_path],
         task_name='make convolution kernel')
 
-    # This loop is so we don't duplicate code for 'ag' and 'hab' with the
+    # This loop is so we don't duplicate code for each mask type with the
     # only difference being the lulc codes and prefix
+    mask_task_path_map = {}
     for mask_prefix, globio_codes in [
-            ('ag', GLOBIO_AG_CODES), ('hab', GLOBIO_NATURAL_CODES)]:
+            ('ag', GLOBIO_AG_CODES), ('hab', GLOBIO_NATURAL_CODES),
+            ('bmp', BMP_LULC_CODES)]:
         mask_key = f'{landcover_key}_{mask_prefix}_mask'
         mask_target_path = os.path.join(
             CHURN_DIR, f'{mask_prefix}_mask',
@@ -326,10 +334,43 @@ def calculate_for_landcover(landcover_path):
             target_path_list=[mask_target_path],
             task_name=f'mask {mask_key}',)
 
-        if mask_prefix == 'hab':
-            hab_task_path_tuple = (mask_task, mask_target_path)
-        elif mask_prefix == 'ag':
-            ag_task_path_tuple = (mask_task, mask_target_path)
+        mask_task_path_map[mask_prefix] = (mask_task, mask_target_path)
+
+    # blend bmp into hab
+    def fractional_add_op(base_array, new_array, frac_val, nodata):
+        """base+new*frac"""
+        valid_mask = (base_array != nodata) | (new_array != nodata)
+        result = numpy.empty(base_array.shape)
+        result[:] = nodata
+        result = numpy.where(
+            base_array[valid_mask] != nodata,
+            base_array[valid_mask], 0) + numpy.where(
+            new_array[valid_mask] != nodata,
+            new_array[valid_mask], 0)
+        return result
+
+    # blend bmp into ag
+    for mask_prefix, bmp_frac in [('hab', 0.1), ('ag', 0.9)]:
+        mask_key = f'{landcover_key}_{mask_prefix}_bmp_mask'
+        combined_mask_bmp_path = os.path.join(
+            CHURN_DIR, f'{mask_prefix}_mask',
+            f'{mask_key}.tif')
+        mask_task = task_graph.add_task(
+            func=pygeoprocessing.raster_calculator,
+            args=(
+                [(mask_task_path_map[mask_prefix][1], 1),
+                 (mask_task_path_map['bmp'][1], 1),
+                 (bmp_frac, 'raw'),
+                 (_MASK_NODATA, 'raw')],
+                fractional_add_op,
+                combined_mask_bmp_path,
+                gdal.GDT_Float32, _MASK_NODATA),
+            target_path_list=[combined_mask_bmp_path],
+            dependent_task_list=[
+                mask_task_path_map[mask_prefix][0],
+                mask_task_path_map['bmp'][0]],
+            task_name='combine bmp mask %s' % mask_key)
+        mask_task_path_map[mask_prefix] = (mask_task, combined_mask_bmp_path)
 
     pollhab_2km_prop_path = os.path.join(
         CHURN_DIR, 'pollhab_2km_prop',
@@ -337,13 +378,13 @@ def calculate_for_landcover(landcover_path):
     pollhab_2km_prop_task = task_graph.add_task(
         func=pygeoprocessing.convolve_2d,
         args=[
-            (hab_task_path_tuple[1], 1), (kernel_raster_path, 1),
+            (mask_task_path_map['hab'][1], 1), (kernel_raster_path, 1),
             pollhab_2km_prop_path],
         kwargs={
             'working_dir': CHURN_DIR,
             'ignore_nodata': True,
             'n_threads': 4},
-        dependent_task_list=[hab_task_path_tuple[0], kernel_task],
+        dependent_task_list=[mask_task_path_map['hab'][0], kernel_task],
         target_path_list=[pollhab_2km_prop_path],
         task_name=(
             'calculate proportional'
@@ -357,11 +398,11 @@ def calculate_for_landcover(landcover_path):
     pollhab_2km_prop_on_ag_task = task_graph.add_task(
         func=mult_rasters,
         args=(
-            ag_task_path_tuple[1], pollhab_2km_prop_path,
+            mask_task_path_map['ag'][1], pollhab_2km_prop_path,
             pollhab_2km_prop_on_ag_path),
         target_path_list=[pollhab_2km_prop_on_ag_path],
         dependent_task_list=[
-            pollhab_2km_prop_task, ag_task_path_tuple[0]],
+            pollhab_2km_prop_task, mask_task_path_map['ag'][0]],
         task_name=(
             f'''pollhab 2km prop on ag {
                 os.path.basename(pollhab_2km_prop_on_ag_path)}'''))
@@ -385,11 +426,11 @@ def calculate_for_landcover(landcover_path):
         func=threshold_select_raster,
         args=(
             pollhab_2km_prop_path,
-            ag_task_path_tuple[1], threshold_val,
+            mask_task_path_map['ag'][1], threshold_val,
             pollinator_suff_hab_path),
         target_path_list=[pollinator_suff_hab_path],
         dependent_task_list=[
-            pollhab_2km_prop_task, ag_task_path_tuple[0]],
+            pollhab_2km_prop_task, mask_task_path_map['ag'][0]],
         task_name=f"""poll_suff_ag_coverage_prop {
             os.path.basename(pollinator_suff_hab_path)}""")
 
@@ -406,10 +447,10 @@ def calculate_for_landcover(landcover_path):
         prod_total_potential_task = task_graph.add_task(
             func=mult_rasters,
             args=(
-                ag_task_path_tuple[1], tot_prod_path,
+                mask_task_path_map['ag'][1], tot_prod_path,
                 prod_total_potential_path),
             target_path_list=[prod_total_potential_path],
-            dependent_task_list=[tot_prod_task, ag_task_path_tuple[0]],
+            dependent_task_list=[tot_prod_task, mask_task_path_map['ag'][0]],
             task_name=(
                 f'tot_prod_{nut_id}_10s_{landcover_key}'))
 
@@ -423,11 +464,11 @@ def calculate_for_landcover(landcover_path):
         prod_poll_dep_potential_nut_scenario_task = task_graph.add_task(
             func=mult_rasters,
             args=(
-                ag_task_path_tuple[1], poll_dep_prod_path,
+                mask_task_path_map['ag'][1], poll_dep_prod_path,
                 prod_poll_dep_potential_nut_scenario_path),
             target_path_list=[prod_poll_dep_potential_nut_scenario_path],
             dependent_task_list=[
-                poll_dep_prod_task, ag_task_path_tuple[0]],
+                poll_dep_prod_task, mask_task_path_map['ag'][0]],
             task_name=(
                 f'poll_dep_prod_{nut_id}_'
                 f'10s_{landcover_key}'))
@@ -529,10 +570,10 @@ def calculate_for_landcover(landcover_path):
     value_total_potential_task = task_graph.add_task(
         func=mult_rasters,
         args=(
-            ag_task_path_tuple[1], target_10s_value_path,
+            mask_task_path_map['ag'][1], target_10s_value_path,
             value_total_potential_path),
         target_path_list=[value_total_potential_path],
-        dependent_task_list=[value_total_task, ag_task_path_tuple[0]],
+        dependent_task_list=[value_total_task, mask_task_path_map['ag'][0]],
         task_name=(
             f'tot_value_10s_{landcover_key}'))
 
@@ -543,11 +584,11 @@ def calculate_for_landcover(landcover_path):
     value_poll_dep_potential_scenario_task = task_graph.add_task(
         func=mult_rasters,
         args=(
-            ag_task_path_tuple[1], target_10s_prod_dep_value_path,
+            mask_task_path_map['ag'][1], target_10s_prod_dep_value_path,
             value_poll_dep_potential_scenario_path),
         target_path_list=[value_poll_dep_potential_scenario_path],
         dependent_task_list=[
-            prod_dep_value_total_task, ag_task_path_tuple[0]],
+            prod_dep_value_total_task, mask_task_path_map['ag'][0]],
         task_name=(
             f'value_dep_prod_10s_{landcover_key}'))
 
@@ -943,12 +984,11 @@ def mask_raster(base_path, codes, target_path):
     LOGGER.debug(f'expanded code array {code_list}')
 
     base_nodata = pygeoprocessing.get_raster_info(base_path)['nodata'][0]
-    mask_nodata = 2
 
     def mask_codes_op(base_array, codes_array):
         """Return a bool raster if value in base_array is in codes_array."""
         result = numpy.empty(base_array.shape, dtype=numpy.int8)
-        result[:] = mask_nodata
+        result[:] = _MASK_NODATA
         valid_mask = base_array != base_nodata
         result[valid_mask] = numpy.isin(
             base_array[valid_mask], codes_array)
@@ -1188,8 +1228,8 @@ def create_value_rasters(
     pygeoprocessing.raster_calculator(
         [(yield_nodata, 'raw'), (pollination_yield_factor_list, 'raw')] +
         [(x, 1) for x in yield_raster_path_list + harea_raster_path_list +
-         price_raster_path_list], total_price_yield_op, target_10km_value_yield_path,
-        gdal.GDT_Float32, yield_nodata)
+         price_raster_path_list], total_price_yield_op,
+        target_10km_value_yield_path, gdal.GDT_Float32, yield_nodata)
 
     y_lat_array = numpy.linspace(
         sample_target_raster_info['geotransform'][3],
@@ -1597,7 +1637,8 @@ def create_price_raster(
     """
     LOGGER.debug(
         'starting rasterization of %s', target_crop_price_raster_path)
-    with open(country_crop_price_pickle_path, 'rb') as country_crop_pickle_file:
+    with open(country_crop_price_pickle_path, 'rb') as (
+            country_crop_pickle_file):
         country_crop_price_map = pickle.load(country_crop_pickle_file)
     pygeoprocessing.new_raster_from_base(
         base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
@@ -1671,6 +1712,8 @@ if __name__ == '__main__':
             # just try to open it in case it's not a raster, we won't see
             # anything otherwise
             r = gdal.OpenEx(raster_path, gdal.OF_RASTER)
+            if r is None:
+                continue
             r = None
             landcover_raster_list.append(raster_path)
 
