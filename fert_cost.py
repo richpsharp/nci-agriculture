@@ -54,9 +54,47 @@ FERT_COST_TABLE_URL = (
 WORKSPACE_DIR = 'fert_cost_workspace'
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     WORKSPACE_DIR, 'adjusted_global_price_map.csv')
-
 AVERAGED_GLOBAL_LABOR_COST_TABLE_PATH = os.path.join(
     WORKSPACE_DIR, 'global_labor_cost.csv')
+AVERAGED_GLOBAL_MACH_COST_TABLE_PATH = os.path.join(
+    WORKSPACE_DIR, 'global_mach_cost.csv')
+AVERAGED_GLOBAL_SEED_COST_TABLE_PATH = os.path.join(
+    WORKSPACE_DIR, 'global_seed_cost.csv')
+
+def calculate_global_average(
+        unique_names, crop_name_to_mf_cost_map, dataframe, cost_id,
+        target_table_path, remap_group_id_tuple=None):
+    """Calculate `cost_id` average in `dataframe` for all crops."""
+    averaged_global_price_map = {}
+    for row in unique_names.iterrows():
+        group_name = row[1][1]
+        group_id = row[1][0]
+        if remap_group_id_tuple and group_id == remap_group_id_tuple[0]:
+            group_id = remap_group_id_tuple[1]
+        # get the subset of group/item/labor price for this group
+        crop_group = dataframe.loc[dataframe['group'] == group_id]
+        crop_names = crop_group['item'].str.lower()
+        avg_labor_cost = crop_group[cost_id].mean()
+        averaged_global_price_map[group_name] = {}
+        print(group_name)
+        for crop_name in sorted(crop_name_to_mf_cost_map):
+            if (crop_names.isin([crop_name])).any():
+                labor_cost = float(crop_group.loc[crop_group['item'] == crop_name][
+                    cost_id])
+            else:
+                labor_cost = avg_labor_cost
+            averaged_global_price_map[group_name][crop_name] = labor_cost
+
+    header_list = [x for x in sorted(averaged_global_price_map.keys())]
+    print(header_list)
+    with open(target_table_path, 'w') as labor_cost_table:
+        labor_cost_table.write(','.join([''] + header_list) + '\n')
+        for crop_name in sorted(crop_name_to_mf_cost_map):
+            labor_cost_table.write('"%s",' % crop_name)
+            labor_cost_table.write(','.join([
+                str(averaged_global_price_map[region][crop_name])
+                for region in header_list]) + '\n')
+
 
 def main():
     """Entry point."""
@@ -98,7 +136,8 @@ def main():
     m_per_ha_cost = ag_costs_df[
         ['group', 'item', 'actual_mach']].drop_duplicates().dropna(how='any')
     s_per_ha_cost = ag_costs_df[
-        ['group', 'item', 'actual_seed']].drop_duplicates().dropna(how='any')
+        ['group', 'item', 'low_seed']].drop_duplicates().dropna(
+            how='any')
 
     crop_global_cost_df = pandas.read_csv(
         crop_global_cost_csv_path).dropna(how='all').dropna(axis=1, how='all')
@@ -112,34 +151,17 @@ def main():
     print(l_per_ha_cost)
     print(unique_names)
     # average labor costs per region
-    averaged_global_labor_price_map = {}
-    for row in unique_names.iterrows():
-        group_name = row[1][1]
-        group_id = row[1][0]
+    calculate_global_average(
+        unique_names, crop_name_to_mf_cost_map, l_per_ha_cost, 'laborcost',
+        AVERAGED_GLOBAL_LABOR_COST_TABLE_PATH)
 
-        # get the subset of group/item/labor price for this group
-        crop_group = l_per_ha_cost.loc[l_per_ha_cost['group'] == group_id]
-        crop_names = crop_group['item'].str.lower()
-        avg_labor_cost = crop_group['laborcost'].mean()
-        averaged_global_labor_price_map[group_name] = {}
-        print(group_name)
-        for crop_name in sorted(crop_name_to_mf_cost_map):
-            if (crop_names.isin([crop_name])).any():
-                labor_cost = float(crop_group.loc[crop_group['item'] == crop_name][
-                    'laborcost'])
-            else:
-                labor_cost = avg_labor_cost
-            averaged_global_labor_price_map[group_name][crop_name] = labor_cost
+    calculate_global_average(
+        unique_names, crop_name_to_mf_cost_map, m_per_ha_cost, 'actual_mach',
+        AVERAGED_GLOBAL_MACH_COST_TABLE_PATH, (9999, 5302))
 
-    header_list = [x for x in sorted(averaged_global_labor_price_map.keys())]
-    print(header_list)
-    with open(AVERAGED_GLOBAL_LABOR_COST_TABLE_PATH, 'w') as labor_cost_table:
-        labor_cost_table.write(','.join([''] + header_list) + '\n')
-        for crop_name in sorted(crop_name_to_mf_cost_map):
-            labor_cost_table.write('"%s",' % crop_name)
-            labor_cost_table.write(','.join([
-                str(averaged_global_labor_price_map[region][crop_name])
-                for region in header_list]) + '\n')
+    calculate_global_average(
+        unique_names, crop_name_to_mf_cost_map, s_per_ha_cost, 'low_seed',
+        AVERAGED_GLOBAL_SEED_COST_TABLE_PATH, (9999, 5302))
 
     # index by region including
     adjusted_global_price_map = {}
