@@ -164,8 +164,6 @@ def main():
                 adjusted_global_price_file.write('%.2f,' % price)
             adjusted_global_price_file.write('\n')
 
-    #
-
 
 if __name__ == '__main__':
     main()
