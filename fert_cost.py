@@ -1,6 +1,5 @@
 """Script to calculate fertilzer cost."""
 import os
-import sys
 
 import ecoshard
 import pandas
@@ -61,6 +60,7 @@ AVERAGED_GLOBAL_MACH_COST_TABLE_PATH = os.path.join(
 AVERAGED_GLOBAL_SEED_COST_TABLE_PATH = os.path.join(
     WORKSPACE_DIR, 'global_seed_cost.csv')
 
+
 def calculate_global_average(
         unique_names, crop_name_to_mf_cost_map, dataframe, cost_id,
         target_table_path, remap_group_id_tuple=None):
@@ -79,8 +79,8 @@ def calculate_global_average(
         print(group_name)
         for crop_name in sorted(crop_name_to_mf_cost_map):
             if (crop_names.isin([crop_name])).any():
-                labor_cost = float(crop_group.loc[crop_group['item'] == crop_name][
-                    cost_id])
+                labor_cost = float(
+                    crop_group.loc[crop_group['item'] == crop_name][cost_id])
             else:
                 labor_cost = avg_labor_cost
             averaged_global_price_map[group_name][crop_name] = labor_cost
@@ -125,12 +125,8 @@ def main():
     unique_names = (
         ag_costs_df[['group', 'group_name']].drop_duplicates().dropna(
             how='any'))
-    group_id_to_name_map = {x[1][0]: x[1][1] for x in unique_names.iterrows()}
     price_per_ton = ag_costs_df[[
         'group', 'group_name', 'item', 'avgPP']].dropna(how='any')
-    fert_per_ha_cost = ag_costs_df[
-        ['group', 'item', 'avg_N', 'avg_P', 'avg_K']].drop_duplicates().dropna(
-            how='any')
     l_per_ha_cost = ag_costs_df[
         ['group', 'item', 'laborcost']].drop_duplicates().dropna(how='any')
     m_per_ha_cost = ag_costs_df[
