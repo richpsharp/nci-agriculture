@@ -67,7 +67,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = max(1, multiprocessing.cpu_count())
+N_WORKERS = -1 # max(1, multiprocessing.cpu_count())
 
 CROP_PRICES_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -114,6 +114,15 @@ def calculate_for_landcover(landcover_path):
     task_graph = taskgraph.TaskGraph(
         CHURN_DIR, N_WORKERS, reporting_interval=5.0)
 
+    zip_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
+    yield_and_harea_task = task_graph.add_task(
+        func=download_and_unzip,
+        args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
+              zip_touch_file_path),
+        target_path_list=[zip_touch_file_path],
+        task_name='download and unzip yield and harea')
+
     # CROP dependent prices?
     crop_prices_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(CROP_PRICES_URL))
@@ -148,6 +157,8 @@ def calculate_for_landcover(landcover_path):
         dependent_task_list=[ag_cost_table_task],
         task_name='calc global costs')
 
+    calc_global_costs_task.join()
+    sys.exit(1)
     crop_prices_pickle_path = os.path.join(CHURN_DIR, 'crop_prices.pickle')
     crop_prices_pickle_task = task_graph.add_task(
         func=parse_country_prices,
@@ -156,8 +167,6 @@ def calculate_for_landcover(landcover_path):
         dependent_task_list=[crop_prices_task],
         task_name='extract crop prices and pickle')
 
-    crop_prices_pickle_task.join()
-    sys.exit(1)
 
     country_iso_gpkg_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
@@ -166,15 +175,6 @@ def calculate_for_landcover(landcover_path):
         args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
         target_path_list=[country_iso_gpkg_path],
         task_name='download country iso gpkg')
-
-    zip_touch_file_path = os.path.join(
-        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
-    yield_and_harea_task = task_graph.add_task(
-        func=download_and_unzip,
-        args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
-              zip_touch_file_path),
-        target_path_list=[zip_touch_file_path],
-        task_name='download and unzip yield and harea')
 
     # need to download everything before we can iterate through it
     task_graph.join()
@@ -1777,7 +1777,7 @@ def calculate_global_costs(
 
     country_crop_price_map = {}
     LOGGER.debug('parse crop prices table')
-    with open(price_table_path, 'r') as crop_prices_file:
+    with open(crop_prices_path, 'r') as crop_prices_file:
         csv_reader = csv.DictReader(crop_prices_file)
         for row in csv_reader:
             price_list = [row[year] for year in [
@@ -1793,7 +1793,6 @@ def calculate_global_costs(
             else:
                 LOGGER.warn('%s/%s has no price', country_id, crop_id)
 
-
     ag_costs_df = pandas.read_csv(ag_costs_table_path, skiprows=[1])
     ag_costs_df['item'] = ag_costs_df['item'].str.lower()
     unique_names = (
@@ -1807,13 +1806,9 @@ def calculate_global_costs(
         ['group', 'item', 'low_seed']].drop_duplicates().dropna(
             how='any')
 
-    # TODO: map crop names to monreda names
-    crop_name_to_mf_cost_map = {
-        (x[1][0]).lower(): {
-            'monfreda_id': x[1][1],
-            'avg_global_price': x[1][2]
-            } for x in crop_global_cost_df.iterrows()}
-
+    # TODO: map crop names to monfreda names
+    # The monfreda crop names *are* the "earthstat_filename_prefix" values in
+    # that column
     print(l_per_ha_cost)
     print(unique_names)
     # average labor costs per region
