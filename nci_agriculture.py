@@ -70,9 +70,6 @@ CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 NODATA = -9999
 N_WORKERS = -1 # max(1, multiprocessing.cpu_count())
 
-CROP_PRICES_URL = (
-    'https://storage.googleapis.com/nci-ecoshards/'
-    'prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv')
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'country_shapefile-20191004T192454Z-001_'
@@ -92,7 +89,7 @@ COUNTRY_TO_REGION_TABLE_URL = (
     'country_region_md5_1ce886d3043c2e65a420ad45e4b99376.csv')
 PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
-    'prices_by_crop_and_country_md5_af6233d592d4a01d8413f50c8ccbc78d.csv')
+    'prices_by_crop_and_country_md5_a1fc8160fac6fa4f34844ab29c92c38a.csv')
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -108,6 +105,9 @@ PER_COUNTRY_CROP_PRICES_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_crop_prices.csv')
 COUNTRY_TO_REGION_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_region.csv')
+COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
+    CHURN_DIR, 'country_crop_price_table.csv')
+
 PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     CHURN_DIR, 'prices_by_crop_and_country.csv')
 
@@ -133,15 +133,6 @@ def calculate_for_landcover(landcover_path):
               zip_touch_file_path),
         target_path_list=[zip_touch_file_path],
         task_name='download and unzip yield and harea')
-
-    # CROP dependent prices?
-    crop_prices_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(CROP_PRICES_URL))
-    crop_prices_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(CROP_PRICES_URL, crop_prices_path),
-        target_path_list=[crop_prices_path],
-        task_name='download crop prices')
 
     ag_costs_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
@@ -172,18 +163,18 @@ def calculate_for_landcover(landcover_path):
     calc_global_costs_task = task_graph.add_task(
         func=calculate_global_costs,
         args=(
-            crop_prices_path, ag_costs_table_path,
+            ag_costs_table_path,
             prices_by_crop_and_country_table_path,
             country_to_region_table_path,
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH),
+            COUNTRY_CROP_PRICE_TABLE_PATH),
         target_path_list=[
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH],
+            COUNTRY_CROP_PRICE_TABLE_PATH],
         dependent_task_list=[ag_cost_table_task],
         task_name='calc global costs')
 
@@ -1780,30 +1771,27 @@ def fractional_add_op(base_array, new_array, frac_val, nodata):
 
 
 def calculate_global_costs(
-        crop_prices_path, ag_costs_table_path,
+        ag_costs_table_path,
         prices_by_crop_and_country_table_path,
         country_to_region_table_path,
         avg_global_labor_cost_table_path,
         avg_global_mach_cost_table_path,
         avg_global_seed_cost_table_path,
-        per_country_price_scale_factor_table_path):
+        country_crop_price_table_path):
     """Parse a global crop prices and ag cost table into per-country prices.
 
     Parameters:
-        crop_prices_path (str): path to a CSV table with headers:
-            'earthstat_filename_prefix', '2010' to '2014', 'aadm0_a3'.
-            This table is used to calculate the per-country price if one exists
-            between 2010 and 2014 (most recent used). Also used to calculate
-            regional per-crop averages
         ag_costs_table_path (str): path to a CSV that has
             'group', 'group_name', 'item', 'avg_N', 'avg_P', 'avg_K',
             'laborcost', 'actual_mach',  'low_mach',  and 'low_seed'.
             where 'group' and 'group_name' identify the geographic region,
             'item' is the crop name and other headers correspond to fertilizer,
             labor, machine, and seed prices.
-        prices_by_crop_and_country_table_path (str): path to a table that maps
-            'AreaName', 'earthstat_filename_prefix', to prices in the headers
-            '2011', '2012', '2013', '2014'.
+        prices_by_crop_and_country_table_path (str): path to a CSV table with headers:
+            'earthstat_filename_prefix', '2010' to '2014', 'aadm0_a3'.
+            This table is used to calculate the per-country price if one exists
+            between 2010 and 2014 (most recent used). Also used to calculate
+            regional per-crop averages
         country_to_region_table_path (str): path to table that maps "Area_name"
             which correspond to 'AreaName' prices by crop and country
             to 'Group_name' which corresponds to 'group_name' in the ag costs
@@ -1811,24 +1799,6 @@ def calculate_global_costs(
 
 
     """
-    country_crop_price_map = {}
-    LOGGER.debug('parse crop prices table')
-    with open(crop_prices_path, 'r') as crop_prices_file:
-        csv_reader = csv.DictReader(crop_prices_file)
-        for row in csv_reader:
-            price_list = [row[year] for year in [
-                '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
-            country_id = row['ISO3']
-            if country_id not in country_crop_price_map:
-                country_crop_price_map[country_id] = {}
-            crop_id = row['earthstat_filename_prefix']
-            if price_list:
-                country_crop_price_map[
-                    country_id][crop_id] = float(
-                        price_list[0])
-            else:
-                LOGGER.warn('%s/%s has no price', country_id, crop_id)
-
     ag_costs_df = pandas.read_csv(ag_costs_table_path, skiprows=[1])
     ag_costs_df['item'] = ag_costs_df['item'].str.lower()
     unique_names = (
@@ -1847,56 +1817,79 @@ def calculate_global_costs(
         prices_by_crop_and_country_table_path)
     country_to_region_df = pandas.read_csv(
         country_to_region_table_path, encoding="ISO-8859-1")
-    country_to_region_names = set(country_to_region_df['Area_name'].unique())
-
+    country_to_region_map = {
+        x[1]['Area_name']: x[1]['Group_name']
+        for x in country_to_region_df.iterrows()
+    }
+    print(country_to_region_map)
     # TODO: make a country to crop price table
     country_to_crop_price_map = collections.defaultdict(dict)
-    for x, y in crop_prices_by_country_df.iterrows():
-        print(x)
-        print(y)
+    avg_region_to_crop_price_map = collections.defaultdict(
+        lambda: collections.defaultdict(list))
+    global_crop_price_map = collections.defaultdict(list)
+    missing_price_set = set()
+    crop_name_set = set()
+    for _, y in crop_prices_by_country_df.iterrows():
+        country_name = str(y[3])
+        if country_name == 'China, mainland':
+            country_name = 'China'
+        region = country_to_region_map[country_name]
+        crop_name = str(y[5])
+        crop_name_set.add(crop_name)
+        prices = (y[27:31]).dropna()
+        if prices.size > 0:
+            price = float(prices.tail(1))
+            country_to_crop_price_map[country_name][crop_name] = price
+            avg_region_to_crop_price_map[region][crop_name].append(price)
+            global_crop_price_map[crop_name].append(price)
+        else:
+            missing_price_set.add(
+                (region, country_name, crop_name))
+    print(avg_region_to_crop_price_map)
+    for region, country_name, crop_name in missing_price_set:
+        value = avg_region_to_crop_price_map[region][crop_name]
+        if isinstance(value, list):
+            if value == []:
+                value = global_crop_price_map[crop_name]
+                if isinstance(value, list):
+                    value = numpy.mean(value)
+                    global_crop_price_map[crop_name] = value
+                avg_region_to_crop_price_map[region][crop_name] = value
+            else:
+                value = numpy.mean(value)
+                avg_region_to_crop_price_map[region][crop_name] = value
+        country_to_crop_price_map[country_name][crop_name] = value
 
-    # First iterate through crop prices by country to build up a
-    # [country][crop]->price map, note crops missing from a country
+    with open(country_crop_price_table_path, 'w') as country_crop_price_table:
+        country_crop_price_table.write('country,crop,price\n')
+        for country_name in sorted(country_to_crop_price_map):
+            price_map = country_to_crop_price_map[country_name]
+            for crop_name in sorted(price_map):
+                price = price_map[crop_name]
+                country_crop_price_table.write(
+                    '%s,%s,%s\n' % (country_name, crop_name, price))
 
-    # for each missing country/crop pair
-    #   determine country region
-    #   determine average price of that crop in that region of known prices
-    #   set average pice to [country][crop]-> price map
-    #for each country:
-    #    for each crop:
-
-    price[country][crop]
-
-
-
-    # TODO: map crop names to monfreda names
     # The monfreda crop names *are* the "earthstat_filename_prefix" values in
     # that column
-
-    crop_name_to_mf_cost_map = {
-        (x[1][0]).lower(): {
-            'monfreda_id': x[1][1],
-            'avg_global_price': x[1][2]
-            } for x in crop_global_cost_df.iterrows()}
 
     print(l_per_ha_cost)
     print(unique_names)
     # average labor costs per region
     calculate_global_average(
-        unique_names, crop_name_to_mf_cost_map, l_per_ha_cost, 'laborcost',
+        unique_names, crop_name_set, l_per_ha_cost, 'laborcost',
         avg_global_labor_cost_table_path)
 
     calculate_global_average(
-        unique_names, crop_name_to_mf_cost_map, m_per_ha_cost, 'actual_mach',
+        unique_names, crop_name_set, m_per_ha_cost, 'actual_mach',
         avg_global_mach_cost_table_path, (9999, 5302))
 
     calculate_global_average(
-        unique_names, crop_name_to_mf_cost_map, s_per_ha_cost, 'low_seed',
+        unique_names, crop_name_set, s_per_ha_cost, 'low_seed',
         avg_global_seed_cost_table_path, (9999, 5302))
 
 
 def calculate_global_average(
-        unique_names, crop_name_to_mf_cost_map, dataframe, cost_id,
+        unique_names, crop_name_set, dataframe, cost_id,
         target_table_path, remap_group_id_tuple=None):
     """Calculate `cost_id` average in `dataframe` for all crops."""
     avg_global_price_map = {}
@@ -1911,7 +1904,7 @@ def calculate_global_average(
         avg_labor_cost = crop_group[cost_id].mean()
         avg_global_price_map[group_name] = {}
         print(group_name)
-        for crop_name in sorted(crop_name_to_mf_cost_map):
+        for crop_name in sorted(crop_name_set):
             if (crop_names.isin([crop_name])).any():
                 labor_cost = float(
                     crop_group.loc[crop_group['item'] == crop_name][cost_id])
@@ -1923,7 +1916,7 @@ def calculate_global_average(
     print(header_list)
     with open(target_table_path, 'w') as labor_cost_table:
         labor_cost_table.write(','.join([''] + header_list) + '\n')
-        for crop_name in sorted(crop_name_to_mf_cost_map):
+        for crop_name in sorted(crop_name_set):
             labor_cost_table.write('"%s",' % crop_name)
             labor_cost_table.write(','.join([
                 str(avg_global_price_map[region][crop_name])
