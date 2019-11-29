@@ -178,17 +178,6 @@ def calculate_for_landcover(landcover_path):
         dependent_task_list=[ag_cost_table_task],
         task_name='calc global costs')
 
-    calc_global_costs_task.join()
-    sys.exit(1)
-    crop_prices_pickle_path = os.path.join(CHURN_DIR, 'crop_prices.pickle')
-    crop_prices_pickle_task = task_graph.add_task(
-        func=parse_country_prices,
-        args=(crop_prices_path, crop_prices_pickle_path),
-        target_path_list=[crop_prices_pickle_path],
-        dependent_task_list=[crop_prices_task],
-        task_name='extract crop prices and pickle')
-
-
     country_iso_gpkg_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
     country_iso_gpkg_task = task_graph.add_task(
@@ -216,10 +205,11 @@ def calculate_for_landcover(landcover_path):
             func=create_price_raster,
             args=(
                 yield_raster_path, country_iso_gpkg_path,
-                crop_prices_pickle_path, crop_name, crop_price_raster_path),
+                COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
+                crop_price_raster_path),
             dependent_task_list=[
                 yield_and_harea_task, country_iso_gpkg_task,
-                crop_prices_pickle_task],
+                calc_global_costs_task],
             ignore_path_list=[country_iso_gpkg_path],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
@@ -1669,7 +1659,7 @@ def download_and_unzip(url, target_dir, target_token_path):
 
 
 def create_price_raster(
-        base_raster_path, country_vector_path, country_crop_price_pickle_path,
+        base_raster_path, country_vector_path, country_crop_price_table_path,
         crop_name, target_crop_price_raster_path):
     """Rasterize countries as prices.
 
@@ -1679,10 +1669,8 @@ def create_price_raster(
         country_vector_path (str): path to country shapefile that has a
             field called `ISO3` that corresponds to the first key in
             `price_map`.
-        country_crop_price_pickle_path (str): path to a pickled
-            map that indexes country ISO names to `crop_name`. If this crop
-            is not in the subdictionary there is no price for that crop in
-            that country.
+        country_crop_price_table_path (str): path to a table that has at
+            least ISO, crop, and price fields.
         target_crop_price_raster_path (str): a raster with pixel values
             corresponding to the country in which the pixel resides and
             the price of that crop in the country.
@@ -1693,9 +1681,10 @@ def create_price_raster(
     """
     LOGGER.debug(
         'starting rasterization of %s', target_crop_price_raster_path)
-    with open(country_crop_price_pickle_path, 'rb') as (
-            country_crop_pickle_file):
-        country_crop_price_map = pickle.load(country_crop_pickle_file)
+    country_crop_price_df = pandas.read_csv(country_crop_price_table_path)
+    country_crop_price_map = {
+        (x[1], x[2]): float(x[3]) for x in country_crop_price_df.iterrows()
+    }
     pygeoprocessing.new_raster_from_base(
         base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
         [-1], fill_value_list=[-1])
@@ -1714,7 +1703,6 @@ def create_price_raster(
     price_layer.StartTransaction()
     for country_feature in country_layer:
         country_name = country_feature.GetField('ISO3')
-
         if country_name in country_crop_price_map and (
                 crop_name in country_crop_price_map[country_name]):
             country_geom = country_feature.GetGeometryRef()
@@ -1731,29 +1719,6 @@ def create_price_raster(
         target_crop_raster, [1], price_layer,
         options=['ATTRIBUTE=price'])
     LOGGER.debug('finished rasterizing %s' % target_crop_price_raster_path)
-
-
-def parse_country_prices(price_table_path, pickle_table_path):
-    """Parse out country prices and pickle to a file."""
-    country_crop_price_map = {}
-    LOGGER.debug('parse crop prices table')
-    with open(price_table_path, 'r') as crop_prices_file:
-        csv_reader = csv.DictReader(crop_prices_file)
-        for row in csv_reader:
-            price_list = [row[year] for year in [
-                '2014', '2013', '2012', '2011', '2010'] if row[year] != '']
-            country_id = row['ISO3']
-            if country_id not in country_crop_price_map:
-                country_crop_price_map[country_id] = {}
-            crop_id = row['earthstat_filename_prefix']
-            if price_list:
-                country_crop_price_map[
-                    country_id][crop_id] = float(
-                        price_list[0])
-            else:
-                LOGGER.warn('%s/%s has no price', country_id, crop_id)
-    with open(pickle_table_path, 'wb') as pickle_table_file:
-        pickle.dump(country_crop_price_map, pickle_table_file)
 
 
 # blend bmp into hab
@@ -1829,12 +1794,15 @@ def calculate_global_costs(
     global_crop_price_map = collections.defaultdict(list)
     missing_price_set = set()
     crop_name_set = set()
+    country_to_iso_name_map = {}
     for _, y in crop_prices_by_country_df.iterrows():
         country_name = str(y[3])
         if country_name == 'China, mainland':
             country_name = 'China'
         region = country_to_region_map[country_name]
+        iso_name = str(y[2])
         crop_name = str(y[5])
+        country_to_iso_name_map[country_name] = iso_name
         crop_name_set.add(crop_name)
         prices = (y[27:31]).dropna()
         if prices.size > 0:
@@ -1861,13 +1829,15 @@ def calculate_global_costs(
         country_to_crop_price_map[country_name][crop_name] = value
 
     with open(country_crop_price_table_path, 'w') as country_crop_price_table:
-        country_crop_price_table.write('country,crop,price\n')
+        country_crop_price_table.write('country,iso_name,crop,price\n')
         for country_name in sorted(country_to_crop_price_map):
             price_map = country_to_crop_price_map[country_name]
+            iso_name = country_to_iso_name_map[country_name]
             for crop_name in sorted(price_map):
                 price = price_map[crop_name]
                 country_crop_price_table.write(
-                    '%s,%s,%s\n' % (country_name, crop_name, price))
+                    '%s,%s,%s,%s\n' % (
+                        country_name, iso_name, crop_name, price))
 
     # The monfreda crop names *are* the "earthstat_filename_prefix" values in
     # that column
