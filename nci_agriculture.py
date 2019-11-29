@@ -68,7 +68,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = -1 # max(1, multiprocessing.cpu_count())
+N_WORKERS = max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -214,7 +214,7 @@ def calculate_for_landcover(landcover_path):
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
         price_raster_task_list.append(price_raster_task)
-
+    task_graph.join()
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
     #   from USDA (2011) . The USDA (2011) data also provided estimated refuse
@@ -1683,7 +1683,8 @@ def create_price_raster(
         'starting rasterization of %s', target_crop_price_raster_path)
     country_crop_price_df = pandas.read_csv(country_crop_price_table_path)
     country_crop_price_map = {
-        (x[1], x[2]): float(x[3]) for x in country_crop_price_df.iterrows()
+        (x[1][1], x[1][2]): float(x[1][3])
+        for x in country_crop_price_df.iterrows()
     }
     pygeoprocessing.new_raster_from_base(
         base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
@@ -1703,13 +1704,12 @@ def create_price_raster(
     price_layer.StartTransaction()
     for country_feature in country_layer:
         country_name = country_feature.GetField('ISO3')
-        if country_name in country_crop_price_map and (
-                crop_name in country_crop_price_map[country_name]):
+        if (country_name, crop_name) in country_crop_price_map:
             country_geom = country_feature.GetGeometryRef()
             new_feature = ogr.Feature(price_layer_defn)
             new_feature.SetGeometry(country_geom.Clone())
             new_feature.SetField(
-                'price', country_crop_price_map[country_name][crop_name])
+                'price', country_crop_price_map[(country_name, crop_name)])
             price_layer.CreateFeature(new_feature)
     price_layer.CommitTransaction()
 
