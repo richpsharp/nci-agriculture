@@ -1797,8 +1797,6 @@ def calculate_global_costs(
     country_to_iso_name_map = {}
     for _, y in crop_prices_by_country_df.iterrows():
         country_name = str(y[3])
-        if country_name == 'China, mainland':
-            country_name = 'China'
         region = country_to_region_map[country_name]
         iso_name = str(y[2])
         crop_name = str(y[5])
