@@ -140,6 +140,14 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[ag_costs_table_path],
         task_name='download ag cost table')
 
+    fert_costs_table_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(FERT_COST_TABLE_URL))
+    fert_cost_table_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(FERT_COST_TABLE_URL, fert_costs_table_path),
+        target_path_list=[fert_costs_table_path],
+        task_name='download fert cost table')
+
     country_to_region_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(COUNTRY_TO_REGION_TABLE_PATH))
     ag_cost_table_task = task_graph.add_task(
@@ -1759,7 +1767,24 @@ def calculate_global_costs(
             which correspond to 'AreaName' prices by crop and country
             to 'Group_name' which corresponds to 'group_name' in the ag costs
             table path.
+        avg_global_labor_cost_table_path (str): create a 2D table whose rows
+            (and first column) correspond to crop name and columns correspond to
+            geographic regions while values correspond to cost per Ha for that
+            crop.
+        avg_global_mach_cost_table_path (str):  create a 2D table whose rows
+            (and first column) correspond to crop name and columns correspond to
+            geographic regions while values correspond to machinery cost per
+            Ha for that crop.
+        avg_global_seed_cost_table_path (str):  create a 2D table whose rows
+            (and first column) correspond to crop name and columns correspond to
+            geographic regions while values correspond to machinery cost per
+            Ha for that crop.
+        country_crop_price_table_path (str): create table with columns
+            'country', 'iso_name', 'crop', 'price'. Not sure of the price
+            units.
 
+    Returns:
+        None
 
     """
     ag_costs_df = pandas.read_csv(ag_costs_table_path, skiprows=[1])
