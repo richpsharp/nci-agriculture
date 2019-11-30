@@ -4,13 +4,11 @@ project so that Peter can run specific landcover maps with given price data.
 """
 import argparse
 import collections
-import csv
 import glob
 import itertools
 import logging
 import multiprocessing
 import os
-import pickle
 import re
 import sys
 import time
