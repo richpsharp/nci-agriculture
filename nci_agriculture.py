@@ -166,6 +166,8 @@ def calculate_for_landcover(landcover_path):
         target_path_list=[prices_by_crop_and_country_table_path],
         task_name='country to region table')
 
+    region_to_country_table_path = os.path.join(
+        CHURN_DIR, 'region_to_country.csv')
     calc_global_costs_task = task_graph.add_task(
         func=calculate_global_costs,
         args=(
@@ -175,12 +177,14 @@ def calculate_for_landcover(landcover_path):
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH),
+            COUNTRY_CROP_PRICE_TABLE_PATH,
+            region_to_country_table_path),
         target_path_list=[
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH],
+            COUNTRY_CROP_PRICE_TABLE_PATH,
+            region_to_country_table_path],
         dependent_task_list=[ag_cost_table_task],
         task_name='calc global costs')
 
@@ -1748,7 +1752,8 @@ def calculate_global_costs(
         avg_global_labor_cost_table_path,
         avg_global_mach_cost_table_path,
         avg_global_seed_cost_table_path,
-        country_crop_price_table_path):
+        country_crop_price_table_path,
+        region_to_country_table_path):
     """Parse a global crop prices and ag cost table into per-country prices.
 
     Parameters:
@@ -1782,6 +1787,8 @@ def calculate_global_costs(
         country_crop_price_table_path (str): create table with columns
             'country', 'iso_name', 'crop', 'price'. Not sure of the price
             units.
+        region_to_country_table_path (str): table mapping country name/ISO
+            to regions used in the other tables.
 
     Returns:
         None
@@ -1867,6 +1874,17 @@ def calculate_global_costs(
     calculate_global_average(
         unique_names, crop_name_set, s_per_ha_cost, 'low_seed',
         avg_global_seed_cost_table_path, (9999, 5302))
+
+    with open(region_to_country_table_path, 'w') as (
+                region_to_country_table_file):
+        region_to_country_table_file.write('country,iso,region\n')
+        LOGGER.debug(country_to_iso_name_map)
+        for country in country_to_iso_name_map:
+            region_to_country_table_file.write(
+                '%s,%s,%s\n' % (
+                    country,
+                    country_to_iso_name_map[country],
+                    country_to_region_map[country]))
 
 
 def calculate_global_average(
