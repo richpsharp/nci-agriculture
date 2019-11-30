@@ -1800,7 +1800,6 @@ def calculate_global_costs(
         ['group', 'item', 'low_seed']].drop_duplicates().dropna(
             how='any')
 
-    # build a country to region map
     crop_prices_by_country_df = pandas.read_csv(
         prices_by_crop_and_country_table_path)
     country_to_region_df = pandas.read_csv(
@@ -1809,8 +1808,6 @@ def calculate_global_costs(
         x[1]['Area_name']: x[1]['Group_name']
         for x in country_to_region_df.iterrows()
     }
-    print(country_to_region_map)
-    # TODO: make a country to crop price table
     country_to_crop_price_map = collections.defaultdict(dict)
     avg_region_to_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(list))
@@ -1834,7 +1831,6 @@ def calculate_global_costs(
         else:
             missing_price_set.add(
                 (region, country_name, crop_name))
-    print(avg_region_to_crop_price_map)
     for region, country_name, crop_name in missing_price_set:
         value = avg_region_to_crop_price_map[region][crop_name]
         if isinstance(value, list):
@@ -1860,12 +1856,6 @@ def calculate_global_costs(
                     '%s,%s,%s,%s\n' % (
                         country_name, iso_name, crop_name, price))
 
-    # The monfreda crop names *are* the "earthstat_filename_prefix" values in
-    # that column
-
-    print(l_per_ha_cost)
-    print(unique_names)
-    # average labor costs per region
     calculate_global_average(
         unique_names, crop_name_set, l_per_ha_cost, 'laborcost',
         avg_global_labor_cost_table_path)
