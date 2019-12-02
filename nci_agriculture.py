@@ -1208,15 +1208,15 @@ def density_to_value_op(density_array, area_array, density_nodata):
 
 
 def create_value_rasters(
-        crop_nutrient_df_path, yield_and_harea_raster_dir,
+        crop_pol_dep_refuse_df_path, yield_and_harea_raster_dir,
         price_raster_dir, consider_pollination, sample_target_raster_path,
         target_10km_value_yield_path, target_10s_value_yield_path,
         target_10s_value_path):
     """Create an economic value raster for all crops given a landcover raster.
 
     Parameters:
-        crop_nutrient_df_path (str): path to CSV with at least the
-            column `filenm` and `Pollination dependence crop`.
+        crop_pol_dep_refuse_df_path (str): path to CSV with at least the
+            columns `filenm`, `Pollination dependence`, and `Percent refuse`.
         yield_and_harea_raster_dir (str): path to a directory that has files
             of the format `[crop_name]_yield.tif` and
             `[crop_name]_harea.tif` where `crop_name` is a value
@@ -1231,7 +1231,7 @@ def create_value_rasters(
         sample_target_fetch_task (Task): must be complete before
             `sample_target_raster_path` is available.
         target_10km_value_yield_path (str): path to target raster that will
-            contain total yield (tons/Ha)
+            contain a price yield raster ($/ha) for all crops.
         target_10s_value_yield_path (str): path to a resampled
             `target_10km_value_yield_path` at 10s resolution.
         target_10s_value_path (str): path to target raster that will
@@ -1251,27 +1251,29 @@ def create_value_rasters(
             os.makedirs(os.path.dirname(path))
         except OSError:
             pass
-    crop_nutrient_df = pandas.read_csv(crop_nutrient_df_path)
+    crop_pol_dep_refuse_df = pandas.read_csv(crop_pol_dep_refuse_df_path)
     yield_raster_path_list = []
     harea_raster_path_list = []  # proportion of harvested area in pixel 0..1
     price_raster_path_list = []
     pollination_yield_factor_list = []
-    for _, row in crop_nutrient_df.iterrows():
+    for _, row in crop_pol_dep_refuse_df.iterrows():
+        crop_id = row['filenm']
+        percent_refuse = row['Percent refuse']
+        pol_dep_prop = row['Pollination dependence']
         yield_raster_path = os.path.join(
-            yield_and_harea_raster_dir, "%s_yield.tif" % row['filenm'])
+            yield_and_harea_raster_dir, "%s_yield.tif" % crop_id)
         harea_raster_path = os.path.join(
-            yield_and_harea_raster_dir, "%s_harea.tif" % row['filenm'])
+            yield_and_harea_raster_dir, "%s_harea.tif" % crop_id)
         price_raster_path = os.path.join(
-            price_raster_dir, '%s_price.tif' % row['filenm'])
+            price_raster_dir, '%s_price.tif' % crop_id)
         if os.path.exists(yield_raster_path):
             yield_raster_path_list.append(yield_raster_path)
             harea_raster_path_list.append(harea_raster_path)
             price_raster_path_list.append(price_raster_path)
             pollination_yield_factor_list.append(
-                (1. - row['Percent refuse'] / 100.))
+                (1. - percent_refuse / 100.))
             if consider_pollination:
-                pollination_yield_factor_list[-1] *= (
-                    row['Pollination dependence'])
+                pollination_yield_factor_list[-1] *= pol_dep_prop
         else:
             raise ValueError(f"not found {yield_raster_path}")
 
