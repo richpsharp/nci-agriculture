@@ -141,7 +141,6 @@ def calculate_for_landcover(task_graph, landcover_path):
             os.makedirs(dir_path)
         except OSError:
             pass
-
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
     #   from USDA (2011) . The USDA (2011) data also provided estimated refuse
@@ -202,7 +201,6 @@ def calculate_for_landcover(task_graph, landcover_path):
         task_name=f"""create prod dep value raster {
             os.path.basename(target_10s_prod_dep_value_path)}""")
 
-    sys.exit(0)
     # 1.2.3.  Crop production
 
     # Spatially-explicit global crop yields (tons/ha) at 5 arc min (~10 km)
@@ -211,7 +209,6 @@ def calculate_for_landcover(task_graph, landcover_path):
     # dependency to calculate the pollination-dependent crop yield for each 5
     # min grid cell. Note the monfreda maps are in units of per-hectare
     # yields
-
     prod_total_nut_10s_task_path_map = {}
     poll_dep_prod_nut_10s_task_path_map = {}
     for nut_id, nutrient_name in [
@@ -291,7 +288,7 @@ def calculate_for_landcover(task_graph, landcover_path):
         mask_target_path = os.path.join(
             CHURN_DIR, f'{mask_prefix}_mask',
             f'{mask_key}.tif')
-
+        LOGGER.info("mask %s", mask_target_path)
         mask_task = task_graph.add_task(
             func=mask_raster,
             args=(landcover_path, globio_codes, mask_target_path),
@@ -323,6 +320,8 @@ def calculate_for_landcover(task_graph, landcover_path):
             task_name='combine bmp mask %s' % mask_key)
         mask_task_path_map[mask_prefix] = (mask_task, combined_mask_bmp_path)
 
+    task_graph.join()
+    sys.exit(0)
     pollhab_2km_prop_path = os.path.join(
         CHURN_DIR, 'pollhab_2km_prop',
         f'pollhab_2km_prop_{landcover_key}.tif')
@@ -1001,19 +1000,23 @@ def _make_logger_callback(message):
 
 
 def total_yield_op(
-        yield_nodata, pollination_yield_factor_list,
+        yield_nodata, yield_factor_list,
         *crop_yield_harea_array_list):
     """Calculate total yield.
 
     Parameters:
         yield_nodata (numeric): nodata value for the arrays in
             ``crop_yield_array_list```.
-        pollination_yield_factor_list (list of float): list of non-refuse
-            proportion of yield that is pollination dependent.
+        yield_factor_list (list of float): list of factors per crop that
+            convert to total yield.
         crop_yield_harea_array_list (list of numpy.ndarray): list of length
-            n of 2D arrays of n/2 yield (tons/Ha) for crops that correlate in
-            order with the ``pollination_yield_factor_list`` followed by
-            n/2 harea (proportional area) of those crops.
+            2*n of 2D arrays of n yield (tons/Ha) for crops that correlate in
+            order with the ``yield_factor_list`` followed by
+            n harea (proportional area) of those crops.
+
+    Returns:
+        sum(crop_yield (tons/Ha) * harvested_area(1/1) *
+        yield_factor)
 
     """
     result = numpy.empty(
@@ -1030,7 +1033,7 @@ def total_yield_op(
         all_valid |= valid_mask
         result[valid_mask] += (
             crop_array[valid_mask] * harea_array[valid_mask] *
-            pollination_yield_factor_list[crop_index])
+            yield_factor_list[crop_index])
     result[~all_valid] = yield_nodata
     return result
 
@@ -1104,7 +1107,7 @@ def create_value_rasters(
         price_raster_dir, consider_pollination, sample_target_raster_path,
         target_10km_value_yield_path, target_10s_value_yield_path,
         target_10s_value_path):
-    """Create an dollar value  yield and total value raster for all crops.
+    """Create an dollar value yield and total value raster for all crops.
 
     Parameters:
         crop_pol_dep_refuse_df_path (str): path to CSV with at least the
@@ -1199,15 +1202,14 @@ def create_value_rasters(
         target_bb=sample_target_raster_info['bounding_box'],
         n_threads=2)
 
+    # multiply by area of pixel to get total production
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
     if target_sr.IsProjected():
-        pixel_prod_factor = numpy.array([[1e4 * abs(
+        pixel_prod_factor = numpy.array([[abs(
             numpy.prod(sample_target_raster_info['pixel_size']) / 1e4)]])
     else:
-        pixel_prod_factor = y_ha_column * 1e4
+        pixel_prod_factor = y_ha_column
 
-    # multiplying the ha_array by 1e4 because the of yield are in
-    # nutrient / 100g and yield is in Mg / ha.
     pygeoprocessing.raster_calculator(
         [(target_10s_value_yield_path, 1), pixel_prod_factor,
          (yield_nodata, 'raw')], density_to_value_op,
@@ -1262,7 +1264,7 @@ def create_prod_nutrient_raster(
     crop_nutrient_df = pandas.read_csv(crop_nutrient_df_path)
     yield_raster_path_list = []
     harea_raster_path_list = []
-    pollination_yield_factor_list = []
+    pollination_nutrient_yield_factor_list = []
     for _, row in crop_nutrient_df.iterrows():
         yield_raster_path = os.path.join(
             yield_and_harea_raster_dir, f"{row['filenm']}_yield.tif")
@@ -1271,10 +1273,10 @@ def create_prod_nutrient_raster(
         if os.path.exists(yield_raster_path):
             yield_raster_path_list.append(yield_raster_path)
             harea_raster_path_list.append(harea_raster_path)
-            pollination_yield_factor_list.append(
+            pollination_nutrient_yield_factor_list.append(
                 (1. - row['Percent refuse'] / 100.) * row[nutrient_name])
             if consider_pollination:
-                pollination_yield_factor_list[-1] *= (
+                pollination_nutrient_yield_factor_list[-1] *= (
                     row['Pollination dependence'])
         else:
             raise ValueError(f"not found {yield_raster_path}")
@@ -1287,7 +1289,8 @@ def create_prod_nutrient_raster(
     yield_nodata = yield_raster_info['nodata'][0]
 
     pygeoprocessing.raster_calculator(
-        [(yield_nodata, 'raw'), (pollination_yield_factor_list, 'raw')] +
+        [(yield_nodata, 'raw'),
+         (pollination_nutrient_yield_factor_list, 'raw')] +
         [(x, 1) for x in yield_raster_path_list + harea_raster_path_list],
         total_yield_op, target_10km_yield_path, gdal.GDT_Float32,
         yield_nodata)
