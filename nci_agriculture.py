@@ -214,6 +214,8 @@ def calculate_for_landcover(landcover_path):
         price_raster_task = task_graph.add_task(
             func=create_price_raster,
             args=(
+                # yield_raster_path is only used as a base raster for getting
+                # the shape & size consisten
                 yield_raster_path, country_iso_gpkg_path,
                 COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
                 crop_price_raster_path),
@@ -261,6 +263,7 @@ def calculate_for_landcover(landcover_path):
         func=create_value_rasters,
         args=(
              crop_nutrient_table_path,
+             # the `False` indicates "do not consider pollination"
              yield_and_harea_raster_dir, crop_price_dir, False, landcover_path,
              target_10km_value_yield_path, target_10s_value_yield_path,
              target_10s_value_path),
@@ -288,6 +291,7 @@ def calculate_for_landcover(landcover_path):
         func=create_value_rasters,
         args=(
              crop_nutrient_table_path,
+             # the `True` indicates "consider pollination"
              yield_and_harea_raster_dir, crop_price_dir, True, landcover_path,
              target_10km_prod_dep_value_yield_path,
              target_10s_prod_dep_value_yield_path,
@@ -1150,9 +1154,14 @@ def total_price_yield_op(
         pollination_yield_factor_list (list of float): list of non-refuse
             proportion of yield that is pollination dependent.
         crop_yield_harea_price_array_list (list of numpy.ndarray): list of
-            length n of 2D arrays of n/2 yield (tons/Ha) for crops that
-            correlate in order with the ``pollination_yield_factor_list``
-            followed by n/2 harea (proportional area) of those crops.
+            length 3*n of 2D arrays where the first n is yield (tons/Ha) and
+            the order of those crops correlate in order with the
+            ``pollination_yield_factor_list``
+            followed by n harea (proportional area) of those crops and ending
+            with n price array rasters for those crops.
+
+    Returns:
+        sum(yield(tons/ha)*area(ha)*pol_factor*price($/ton))
 
     """
     result = numpy.empty(
@@ -1161,8 +1170,6 @@ def total_price_yield_op(
     all_valid = numpy.zeros(result.shape, dtype=numpy.bool)
 
     n_crops = len(crop_yield_harea_price_array_list) // 3
-    total_area_array = numpy.zeros(result.shape)
-    total_area_if_price_array = numpy.zeros(result.shape)
 
     for crop_index in range(n_crops):
         crop_array = crop_yield_harea_price_array_list[crop_index]
@@ -1170,21 +1177,11 @@ def total_price_yield_op(
         price_array = crop_yield_harea_price_array_list[crop_index + 2*n_crops]
         valid_mask = crop_array != yield_nodata
         all_valid |= valid_mask
-        total_area_array[valid_mask] += harea_array[valid_mask]
-        valid_if_prices = valid_mask & (price_array != 0)
-        total_area_if_price_array[valid_if_prices] += (
-            harea_array[valid_if_prices])
         result[valid_mask] += (
             crop_array[valid_mask] * harea_array[valid_mask] *
-            pollination_yield_factor_list[crop_index])
-    scaling_mask = total_area_array != 0
-    scaling_factor = numpy.zeros(result.shape)
-    scaling_factor[scaling_mask] = total_area_array[scaling_mask] / (
-        total_area_if_price_array[scaling_mask])
+            pollination_yield_factor_list[crop_index] *
+            price_array[valid_mask])
     result[~all_valid] = yield_nodata
-    # this line rescales the prices in case there are zero prices that should
-    # otherwise take up harvested area
-    result[all_valid] *= scaling_factor[all_valid]
     return result
 
 
