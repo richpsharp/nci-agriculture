@@ -105,13 +105,27 @@ COUNTRY_TO_REGION_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_region.csv')
 COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
-
+COUNTRY_ISO_GPKG_PATH = os.path.join(
+    ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
 PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     CHURN_DIR, 'prices_by_crop_and_country.csv')
+REGION_TO_COUNTRY_TABLE_PATH = os.path.join(
+    CHURN_DIR, 'region_to_country.csv')
 
 
-def calculate_for_landcover(landcover_path):
-    """Entry point."""
+def calculate_for_landcover(task_graph, landcover_path):
+    """Calculate values for a given landcover.
+
+    Parameters:
+        task_graph (taskgraph.TaskGraph): taskgraph object used to schedule
+            work.
+        landcover_path (str): path to a landcover map with globio style
+            landcover codes.
+
+    Returns:
+        None.
+
+    """
     landcover_key = os.path.splitext(os.path.basename(landcover_path))[0]
     output_dir = os.path.join(WORKING_DIR, landcover_key)
     for dir_path in [output_dir, ECOSHARD_DIR, CHURN_DIR]:
@@ -120,94 +134,15 @@ def calculate_for_landcover(landcover_path):
         except OSError:
             pass
 
-    task_graph = taskgraph.TaskGraph(
-        CHURN_DIR, N_WORKERS, reporting_interval=5.0)
-
-    zip_touch_file_path = os.path.join(
-        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
-    yield_and_harea_task = task_graph.add_task(
-        func=download_and_unzip,
-        args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
-              zip_touch_file_path),
-        target_path_list=[zip_touch_file_path],
-        task_name='download and unzip yield and harea')
-
-    ag_costs_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
-    ag_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(AG_COST_TABLE_URL, ag_costs_table_path),
-        target_path_list=[ag_costs_table_path],
-        task_name='download ag cost table')
-
-    fert_costs_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(FERT_COST_TABLE_URL))
-    fert_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(FERT_COST_TABLE_URL, fert_costs_table_path),
-        target_path_list=[fert_costs_table_path],
-        task_name='download fert cost table')
-
-    country_to_region_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(COUNTRY_TO_REGION_TABLE_PATH))
-    ag_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(COUNTRY_TO_REGION_TABLE_URL, country_to_region_table_path),
-        target_path_list=[country_to_region_table_path],
-        task_name='country to region table')
-
-    prices_by_crop_and_country_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH))
-    ag_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(
-            PRICES_BY_CROP_AND_COUNTRY_TABLE_URL,
-            prices_by_crop_and_country_table_path),
-        target_path_list=[prices_by_crop_and_country_table_path],
-        task_name='country to region table')
-
-    region_to_country_table_path = os.path.join(
-        CHURN_DIR, 'region_to_country.csv')
-    calc_global_costs_task = task_graph.add_task(
-        func=calculate_global_costs,
-        args=(
-            ag_costs_table_path,
-            prices_by_crop_and_country_table_path,
-            country_to_region_table_path,
-            AVG_GLOBAL_LABOR_COST_TABLE_PATH,
-            AVG_GLOBAL_MACH_COST_TABLE_PATH,
-            AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH,
-            region_to_country_table_path),
-        target_path_list=[
-            AVG_GLOBAL_LABOR_COST_TABLE_PATH,
-            AVG_GLOBAL_MACH_COST_TABLE_PATH,
-            AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH,
-            region_to_country_table_path],
-        dependent_task_list=[ag_cost_table_task],
-        task_name='calc global costs')
-
-    country_iso_gpkg_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
-    country_iso_gpkg_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
-        target_path_list=[country_iso_gpkg_path],
-        task_name='download country iso gpkg')
-
-    # need to download everything before we can iterate through it
-    task_graph.join()
-
     yield_and_harea_raster_dir = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 
+    # Create global price rasters
     price_raster_task_list = []
     for yield_raster_path in glob.glob(os.path.join(
             yield_and_harea_raster_dir, '*_yield.tif')):
         crop_name = re.match(
             '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
-        LOGGER.debug(crop_name)
         crop_price_dir = os.path.join(CHURN_DIR, 'crop_prices')
         crop_price_raster_path = os.path.join(
             crop_price_dir, '%s_price.tif' % crop_name)
@@ -216,17 +151,15 @@ def calculate_for_landcover(landcover_path):
             args=(
                 # yield_raster_path is only used as a base raster for getting
                 # the shape & size consisten
-                yield_raster_path, country_iso_gpkg_path,
+                yield_raster_path, COUNTRY_ISO_GPKG_PATH,
                 COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
                 crop_price_raster_path),
-            dependent_task_list=[
-                yield_and_harea_task, country_iso_gpkg_task,
-                calc_global_costs_task],
-            ignore_path_list=[country_iso_gpkg_path],
+            ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
         price_raster_task_list.append(price_raster_task)
     task_graph.join()
+    sys.exit(0)
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
     #   from USDA (2011) . The USDA (2011) data also provided estimated refuse
@@ -1235,10 +1168,7 @@ def create_value_rasters(
         target_10s_value_yield_path (str): path to a resampled
             `target_10km_value_yield_path` at 10s resolution.
         target_10s_value_path (str): path to target raster that will
-            contain a per-pixel amount of pollinator produced `nutrient_name`
-            calculated as the sum(
-                crop_yield_map * (100-Percent refuse crop) *
-                (Pollination dependence crop) * nutrient) * (ha / pixel map))
+            contain a dollar amount of the total dollar value of crops.
 
     Returns:
         None.
@@ -1925,6 +1855,92 @@ def calculate_global_average(
                 for region in header_list]) + '\n')
 
 
+def download_and_preprocess_data(task_graph):
+    """Download all ecoshards and create base tables.
+
+    Parameter:
+        task_graph (taskgraph.TaskGraph): taskgraph object for scheduling,
+            will use to block this function until complete.
+
+    Returns:
+        None.
+
+    """
+    zip_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
+    yield_and_harea_task = task_graph.add_task(
+        func=download_and_unzip,
+        args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
+              zip_touch_file_path),
+        target_path_list=[zip_touch_file_path],
+        task_name='download and unzip yield and harea')
+
+    ag_costs_table_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
+    ag_cost_table_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(AG_COST_TABLE_URL, ag_costs_table_path),
+        target_path_list=[ag_costs_table_path],
+        task_name='download ag cost table')
+
+    fert_costs_table_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(FERT_COST_TABLE_URL))
+    fert_cost_table_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(FERT_COST_TABLE_URL, fert_costs_table_path),
+        target_path_list=[fert_costs_table_path],
+        task_name='download fert cost table')
+
+    country_to_region_table_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_TO_REGION_TABLE_PATH))
+    ag_cost_table_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(COUNTRY_TO_REGION_TABLE_URL, country_to_region_table_path),
+        target_path_list=[country_to_region_table_path],
+        task_name='country to region table')
+
+    prices_by_crop_and_country_table_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH))
+    ag_cost_table_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(
+            PRICES_BY_CROP_AND_COUNTRY_TABLE_URL,
+            prices_by_crop_and_country_table_path),
+        target_path_list=[prices_by_crop_and_country_table_path],
+        task_name='country to region table')
+
+    calc_global_costs_task = task_graph.add_task(
+        func=calculate_global_costs,
+        args=(
+            ag_costs_table_path,
+            prices_by_crop_and_country_table_path,
+            country_to_region_table_path,
+            AVG_GLOBAL_LABOR_COST_TABLE_PATH,
+            AVG_GLOBAL_MACH_COST_TABLE_PATH,
+            AVG_GLOBAL_SEED_COST_TABLE_PATH,
+            COUNTRY_CROP_PRICE_TABLE_PATH,
+            REGION_TO_COUNTRY_TABLE_PATH),
+        target_path_list=[
+            AVG_GLOBAL_LABOR_COST_TABLE_PATH,
+            AVG_GLOBAL_MACH_COST_TABLE_PATH,
+            AVG_GLOBAL_SEED_COST_TABLE_PATH,
+            COUNTRY_CROP_PRICE_TABLE_PATH,
+            REGION_TO_COUNTRY_TABLE_PATH],
+        dependent_task_list=[ag_cost_table_task],
+        task_name='calc global costs')
+
+    country_iso_gpkg_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
+    country_iso_gpkg_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
+        target_path_list=[country_iso_gpkg_path],
+        task_name='download country iso gpkg')
+
+    # need to download everything before we can iterate through it
+    task_graph.join()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='NCI Pollination Analysis')
     parser.add_argument(
@@ -1945,5 +1961,10 @@ if __name__ == '__main__':
             r = None
             landcover_raster_list.append(raster_path)
 
+    task_graph = taskgraph.TaskGraph(
+        CHURN_DIR, N_WORKERS, reporting_interval=5.0)
+    LOGGER.info("download data and preprocess")
+    download_and_preprocess_data(task_graph)
     for landcover_path in landcover_raster_list:
-        calculate_for_landcover(landcover_path)
+        LOGGER.info("process landcover map: %s", landcover_path)
+        calculate_for_landcover(task_graph, landcover_path)
