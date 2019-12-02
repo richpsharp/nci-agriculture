@@ -1154,14 +1154,18 @@ def total_price_yield_op(
         pollination_yield_factor_list (list of float): list of non-refuse
             proportion of yield that is pollination dependent.
         crop_yield_harea_price_array_list (list of numpy.ndarray): list of
-            length 3*n of 2D arrays where the first n is yield (tons/Ha) and
-            the order of those crops correlate in order with the
-            ``pollination_yield_factor_list``
-            followed by n harea (proportional area) of those crops and ending
-            with n price array rasters for those crops.
+            length 3*n of 2D arrays where
+            * the first n is yield (tons/Ha) and
+              the order of those crops correlate in order with the
+              ``pollination_yield_factor_list``
+            * followed at index n by n harea arrays (harvested area) of those
+              crops
+            * and ending at index 2n for n arrays which are the $/ton for those
+              crops.
 
     Returns:
-        sum(yield(tons/ha)*area(ha)*pol_factor*price($/ton))
+        sum(yield(tons/ha)*harvested_area(1/1)*pol_factor*price($/ton))
+        (return units are $/ha)
 
     """
     result = numpy.empty(
@@ -1249,7 +1253,7 @@ def create_value_rasters(
             pass
     crop_nutrient_df = pandas.read_csv(crop_nutrient_df_path)
     yield_raster_path_list = []
-    harea_raster_path_list = []
+    harea_raster_path_list = []  # proportion of harvested area in pixel 0..1
     price_raster_path_list = []
     pollination_yield_factor_list = []
     for _, row in crop_nutrient_df.iterrows():
