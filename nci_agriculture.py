@@ -1711,6 +1711,10 @@ def calculate_global_costs(
         x[1]['Area_name']: x[1]['Group_name']
         for x in country_to_region_df.iterrows()
     }
+    crop_names = crop_prices_by_country_df[
+        'earthstat_filename_prefix'].drop_duplicates.dropna()
+    LOGGER.debug(crop_names)
+    sys.exit()
     country_to_crop_price_map = collections.defaultdict(dict)
     avg_region_to_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(list))
