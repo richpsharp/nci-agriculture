@@ -88,6 +88,9 @@ COUNTRY_TO_REGION_TABLE_URL = (
 PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'prices_by_crop_and_country_md5_a1fc8160fac6fa4f34844ab29c92c38a.csv')
+CROP_NUTRIENT_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'crop_nutrient_md5_2fbe7455357f8008a12827fd88816fc1.csv')
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -107,10 +110,15 @@ COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
 COUNTRY_ISO_GPKG_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
+CROP_NUTRIENT_TABLE_PATH = os.path.join(
+    ECOSHARD_DIR, os.path.basename(CROP_NUTRIENT_URL))
 PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     CHURN_DIR, 'prices_by_crop_and_country.csv')
 REGION_TO_COUNTRY_TABLE_PATH = os.path.join(
     CHURN_DIR, 'region_to_country.csv')
+YIELD_AND_HAREA_RASTER_DIR = os.path.join(
+    ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
+CROP_PRICE_DIR = os.path.join(CHURN_DIR, 'crop_prices')
 
 
 def calculate_for_landcover(task_graph, landcover_path):
@@ -134,32 +142,6 @@ def calculate_for_landcover(task_graph, landcover_path):
         except OSError:
             pass
 
-    yield_and_harea_raster_dir = os.path.join(
-        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
-
-    # Create global price rasters
-    price_raster_task_list = []
-    for yield_raster_path in glob.glob(os.path.join(
-            yield_and_harea_raster_dir, '*_yield.tif')):
-        crop_name = re.match(
-            '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
-        crop_price_dir = os.path.join(CHURN_DIR, 'crop_prices')
-        crop_price_raster_path = os.path.join(
-            crop_price_dir, '%s_price.tif' % crop_name)
-        price_raster_task = task_graph.add_task(
-            func=create_price_raster,
-            args=(
-                # yield_raster_path is only used as a base raster for getting
-                # the shape & size consisten
-                yield_raster_path, COUNTRY_ISO_GPKG_PATH,
-                COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
-                crop_price_raster_path),
-            ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
-            target_path_list=[crop_price_raster_path],
-            task_name='%s price raster' % crop_name)
-        price_raster_task_list.append(price_raster_task)
-    task_graph.join()
-    sys.exit(0)
     # Crop content of critical macro and micronutrients (KJ energy/100 g, IU
     #   Vitamin A/ 100 g and mcg Folate/100g) for the 115 crops were taken
     #   from USDA (2011) . The USDA (2011) data also provided estimated refuse
@@ -170,19 +152,6 @@ def calculate_for_landcover(task_graph, landcover_path):
     #   nutrient at 5 arc min. The full table used in this analysis can be
     # found at https://storage.googleapis.com/ecoshard-root/'
     # 'crop_nutrient_md5_d6e67fd79ef95ab2dd44ca3432e9bb4d.csv
-    crop_nutrient_url = (
-        'https://storage.googleapis.com/nci-ecoshards/'
-        'crop_nutrient_md5_2fbe7455357f8008a12827fd88816fc1.csv')
-    crop_nutrient_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(crop_nutrient_url))
-
-    crop_nutrient_table_fetch_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(
-            crop_nutrient_url, crop_nutrient_table_path),
-        target_path_list=[crop_nutrient_table_path],
-        task_name=f'fetch {os.path.basename(crop_nutrient_table_path)}')
-
     target_10km_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_yield_rasters',
         f'monfreda_2008_value_yield_total_10km_%s.tif' % landcover_key)
@@ -195,17 +164,14 @@ def calculate_for_landcover(task_graph, landcover_path):
     value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
-             crop_nutrient_table_path,
+             CROP_NUTRIENT_TABLE_PATH,
              # the `False` indicates "do not consider pollination"
-             yield_and_harea_raster_dir, crop_price_dir, False, landcover_path,
+             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, False, landcover_path,
              target_10km_value_yield_path, target_10s_value_yield_path,
              target_10s_value_path),
         target_path_list=[
             target_10km_value_yield_path, target_10s_value_yield_path,
             target_10s_value_path],
-        dependent_task_list=[
-            yield_and_harea_task,
-            crop_nutrient_table_fetch_task] + price_raster_task_list,
         task_name=f"""create prod raster {
             os.path.basename(target_10s_value_path)}""")
 
@@ -223,9 +189,9 @@ def calculate_for_landcover(task_graph, landcover_path):
     prod_dep_value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
-             crop_nutrient_table_path,
+             CROP_NUTRIENT_TABLE_PATH,
              # the `True` indicates "consider pollination"
-             yield_and_harea_raster_dir, crop_price_dir, True, landcover_path,
+             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, True, landcover_path,
              target_10km_prod_dep_value_yield_path,
              target_10s_prod_dep_value_yield_path,
              target_10s_prod_dep_value_path),
@@ -233,12 +199,10 @@ def calculate_for_landcover(task_graph, landcover_path):
             target_10km_prod_dep_value_yield_path,
             target_10s_prod_dep_value_yield_path,
             target_10s_prod_dep_value_path],
-        dependent_task_list=[
-            yield_and_harea_task,
-            crop_nutrient_table_fetch_task] + price_raster_task_list,
         task_name=f"""create prod dep value raster {
             os.path.basename(target_10s_prod_dep_value_path)}""")
 
+    sys.exit(0)
     # 1.2.3.  Crop production
 
     # Spatially-explicit global crop yields (tons/ha) at 5 arc min (~10 km)
@@ -266,16 +230,13 @@ def calculate_for_landcover(task_graph, landcover_path):
         prod_total_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
             args=(
-                 crop_nutrient_table_path, nutrient_name,
-                 yield_and_harea_raster_dir, False, landcover_path,
+                 CROP_NUTRIENT_TABLE_PATH, nutrient_name,
+                 YIELD_AND_HAREA_RASTER_DIR, False, landcover_path,
                  yield_total_nut_10km_path, yield_total_nut_10s_path,
                  prod_total_nut_10s_path),
             target_path_list=[
                 yield_total_nut_10km_path, yield_total_nut_10s_path,
                 prod_total_nut_10s_path],
-            dependent_task_list=[
-                yield_and_harea_task,
-                crop_nutrient_table_fetch_task],
             task_name=f"""create prod raster {
                 os.path.basename(prod_total_nut_10s_path)}""")
         prod_total_nut_10s_task_path_map[nut_id] = (
@@ -296,15 +257,13 @@ def calculate_for_landcover(task_graph, landcover_path):
         pol_dep_prod_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
             args=(
-                crop_nutrient_table_path, nutrient_name,
-                yield_and_harea_raster_dir, True, landcover_path,
+                CROP_NUTRIENT_TABLE_PATH, nutrient_name,
+                YIELD_AND_HAREA_RASTER_DIR, True, landcover_path,
                 poll_dep_yield_nut_10km_path, poll_dep_yield_nut_10s_path,
                 poll_dep_prod_nut_10s_path),
             target_path_list=[
                 poll_dep_yield_nut_10km_path, poll_dep_yield_nut_10s_path,
                 poll_dep_prod_nut_10s_path],
-            dependent_task_list=[
-                yield_and_harea_task, crop_nutrient_table_fetch_task],
             task_name=f"""create poll dep production raster {
                 os.path.basename(poll_dep_prod_nut_10s_path)}""")
         poll_dep_prod_nut_10s_task_path_map[nut_id] = (
@@ -1145,7 +1104,7 @@ def create_value_rasters(
         price_raster_dir, consider_pollination, sample_target_raster_path,
         target_10km_value_yield_path, target_10s_value_yield_path,
         target_10s_value_path):
-    """Create an economic value raster for all crops given a landcover raster.
+    """Create an dollar value  yield and total value raster for all crops.
 
     Parameters:
         crop_pol_dep_refuse_df_path (str): path to CSV with at least the
@@ -1168,7 +1127,8 @@ def create_value_rasters(
         target_10s_value_yield_path (str): path to a resampled
             `target_10km_value_yield_path` at 10s resolution.
         target_10s_value_path (str): path to target raster that will
-            contain a dollar amount of the total dollar value of crops.
+            contain a dollar amount of the total dollar value of crops per
+            pixel.
 
     Returns:
         None.
@@ -1866,6 +1826,13 @@ def download_and_preprocess_data(task_graph):
         None.
 
     """
+    crop_nutrient_table_fetch_task = task_graph.add_task(
+        func=ecoshard.download_url,
+        args=(
+            CROP_NUTRIENT_URL, CROP_NUTRIENT_TABLE_PATH),
+        target_path_list=[CROP_NUTRIENT_TABLE_PATH],
+        task_name=f'fetch {os.path.basename(CROP_NUTRIENT_TABLE_PATH)}')
+
     zip_touch_file_path = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
     yield_and_harea_task = task_graph.add_task(
@@ -1936,6 +1903,27 @@ def download_and_preprocess_data(task_graph):
         args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
         target_path_list=[country_iso_gpkg_path],
         task_name='download country iso gpkg')
+
+    # Create global price rasters
+    price_raster_task_list = []
+    for yield_raster_path in glob.glob(os.path.join(
+            YIELD_AND_HAREA_RASTER_DIR, '*_yield.tif')):
+        crop_name = re.match(
+            '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
+        crop_price_raster_path = os.path.join(
+            CROP_PRICE_DIR, '%s_price.tif' % crop_name)
+        price_raster_task = task_graph.add_task(
+            func=create_price_raster,
+            args=(
+                # yield_raster_path is only used as a base raster for getting
+                # the shape & size consisten
+                yield_raster_path, COUNTRY_ISO_GPKG_PATH,
+                COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
+                crop_price_raster_path),
+            ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
+            target_path_list=[crop_price_raster_path],
+            task_name='%s price raster' % crop_name)
+        price_raster_task_list.append(price_raster_task)
 
     # need to download everything before we can iterate through it
     task_graph.join()
