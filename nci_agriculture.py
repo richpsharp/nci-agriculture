@@ -1561,9 +1561,9 @@ def download_and_unzip(url, target_dir, target_token_path):
         touchfile.write(f'unzipped {zipfile_path}')
 
 
-def create_price_raster(
-        base_raster_path, country_vector_path, country_crop_price_table_path,
-        crop_name, target_crop_price_raster_path):
+def cost_table_to_raster(
+        base_raster_path, country_vector_path, cost_table_path,
+        crop_name, target_cost_raster_path):
     """Rasterize countries as prices.
 
     Parameters:
@@ -1572,9 +1572,9 @@ def create_price_raster(
         country_vector_path (str): path to country shapefile that has a
             field called `ISO3` that corresponds to the first key in
             `price_map`.
-        country_crop_price_table_path (str): path to a table that has at
-            least ISO, crop, and price fields.
-        target_crop_price_raster_path (str): a raster with pixel values
+        cost_table_path (str): path to a table that has columns 3 columns in
+            order of 'iso_name', 'crop', and 'cost'.
+        target_cost_raster_path (str): a raster with pixel values
             corresponding to the country in which the pixel resides and
             the price of that crop in the country.
 
@@ -1583,14 +1583,14 @@ def create_price_raster(
 
     """
     LOGGER.debug(
-        'starting rasterization of %s', target_crop_price_raster_path)
-    country_crop_price_df = pandas.read_csv(country_crop_price_table_path)
-    country_crop_price_map = {
+        'starting rasterization of %s', target_cost_raster_path)
+    country_cost_df = pandas.read_csv(cost_table_path)
+    country_crop_cost_map = {
         (x[1][0], x[1][1]): float(x[1][2])
-        for x in country_crop_price_df.iterrows()
+        for x in country_cost_df.iterrows()
     }
     pygeoprocessing.new_raster_from_base(
-        base_raster_path, target_crop_price_raster_path, gdal.GDT_Float32,
+        base_raster_path, target_cost_raster_path, gdal.GDT_Float32,
         [-1], fill_value_list=[-1])
     memory_driver = ogr.GetDriverByName('MEMORY')
     country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
@@ -1607,21 +1607,21 @@ def create_price_raster(
     price_layer.StartTransaction()
     for country_feature in country_layer:
         country_name = country_feature.GetField('ISO3')
-        if (country_name, crop_name) in country_crop_price_map:
+        if (country_name, crop_name) in country_crop_cost_map:
             country_geom = country_feature.GetGeometryRef()
             new_feature = ogr.Feature(price_layer_defn)
             new_feature.SetGeometry(country_geom.Clone())
             new_feature.SetField(
-                'price', country_crop_price_map[(country_name, crop_name)])
+                'price', country_crop_cost_map[(country_name, crop_name)])
             price_layer.CreateFeature(new_feature)
     price_layer.CommitTransaction()
 
     target_crop_raster = gdal.OpenEx(
-        target_crop_price_raster_path, gdal.OF_RASTER | gdal.GA_Update)
+        target_cost_raster_path, gdal.OF_RASTER | gdal.GA_Update)
     gdal.RasterizeLayer(
         target_crop_raster, [1], price_layer,
         options=['ATTRIBUTE=price'])
-    LOGGER.debug('finished rasterizing %s' % target_crop_price_raster_path)
+    LOGGER.debug('finished rasterizing %s' % target_cost_raster_path)
 
 
 # blend bmp into hab
@@ -1809,11 +1809,11 @@ def calculate_global_average(
         # get the subset of group/item/labor price for this group
         crop_group = group_crop_cost_df.loc[
             group_crop_cost_df['group'] == group_id]
-        crop_names = crop_group['item'].str.lower()
+        known_crops = crop_group['item'].str.lower()
         avg_cost = crop_group[cost_id].mean()
         avg_global_price_map[group_name] = {}
         for crop_name in sorted(crop_names):
-            if (crop_names.isin([crop_name])).any():
+            if (known_crops.isin([crop_name])).any():
                 cost = float(
                     crop_group.loc[crop_group['item'] == crop_name][cost_id])
             else:
@@ -1824,11 +1824,8 @@ def calculate_global_average(
     with open(target_table_path, 'w') as cost_table:
         cost_table.write('iso_name,crop,%s\n' % cost_id)
         for region in sorted(avg_global_price_map):
-            LOGGER.debug(region)
             for iso_code in sorted(region_to_iso_map[region]):
-                LOGGER.debug(iso_code)
                 for crop_name in sorted(crop_names):
-                    LOGGER.debug(crop_name)
                     if crop_name not in avg_global_price_map[region]:
                         avg_cost = numpy.mean(
                             [avg_global_price_map[x][crop_name]
@@ -1933,22 +1930,25 @@ def download_and_preprocess_data(task_graph):
             YIELD_AND_HAREA_RASTER_DIR, '*_yield.tif')):
         crop_name = re.match(
             '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
-        crop_price_raster_path = os.path.join(
-            CROP_PRICE_DIR, '%s_price.tif' % crop_name)
-        price_raster_task = task_graph.add_task(
-            func=create_price_raster,
-            args=(
-                # yield_raster_path is only used as a base raster for getting
-                # the shape & size consisten
-                yield_raster_path, COUNTRY_ISO_GPKG_PATH,
-                COUNTRY_CROP_PRICE_TABLE_PATH, crop_name,
-                crop_price_raster_path),
-            ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
-            target_path_list=[crop_price_raster_path],
-            task_name='%s price raster' % crop_name)
-        price_raster_task_list.append(price_raster_task)
-
-        # create seed cost raster
+        for cost_id, cost_table_path in [
+                ('laborcost', AVG_GLOBAL_LABOR_COST_TABLE_PATH),
+                ('actual_mach', AVG_GLOBAL_MACH_COST_TABLE_PATH),
+                ('low_seed', AVG_GLOBAL_SEED_COST_TABLE_PATH),
+                ('price', COUNTRY_CROP_PRICE_TABLE_PATH)]:
+            cost_raster_path = os.path.join(
+                CROP_PRICE_DIR, '%s_%s.tif' % (crop_name, cost_id))
+            price_raster_task = task_graph.add_task(
+                func=cost_table_to_raster,
+                args=(
+                    # yield_raster_path is only used as a base raster for getting
+                    # the shape & size consisten
+                    yield_raster_path, COUNTRY_ISO_GPKG_PATH,
+                    cost_table_path, crop_name,
+                    cost_raster_path),
+                ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
+                target_path_list=[cost_raster_path],
+                task_name='%s %s raster' % (crop_name, cost_id))
+            price_raster_task_list.append(price_raster_task)
 
     # need to download everything before we can iterate through it
     task_graph.join()
