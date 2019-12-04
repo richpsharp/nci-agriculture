@@ -84,7 +84,7 @@ FERT_COST_TABLE_URL = (
     'fert_cost_table_md5_a904bab573d7c30633c64a93dbff4347.csv')
 COUNTRY_REGION_ISO_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
-    'country_region_iso_table_md5_a92f42ebb33d9f3fb198cc4909499cdd')
+    'country_region_iso_table_md5_a92f42ebb33d9f3fb198cc4909499cdd.csv')
 PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'prices_by_crop_and_country_md5_a1fc8160fac6fa4f34844ab29c92c38a.csv')
@@ -1685,7 +1685,7 @@ def calculate_global_costs(
     """
     ag_costs_df = pandas.read_csv(ag_costs_table_path, skiprows=[1])
     ag_costs_df['item'] = ag_costs_df['item'].str.lower()
-    unique_names = (
+    region_names = (
         ag_costs_df[['group', 'group_name']].drop_duplicates().dropna(
             how='any'))
     l_per_ha_cost = ag_costs_df[
@@ -1698,16 +1698,17 @@ def calculate_global_costs(
 
     crop_prices_by_country_df = pandas.read_csv(
         prices_by_crop_and_country_table_path)
-    LOGGER.debug(country_region_iso_table_path)
     country_region_iso_df = pandas.read_csv(
         country_region_iso_table_path, encoding="ISO-8859-1")
     iso_to_region_map = {
         x[1]['ISO3']: x[1]['Group_name']
         for x in country_region_iso_df.iterrows()
     }
+    # rever the iso to region map so we can make regions specific to countries
+    region_to_iso_map = collections.defaultdict(list)
+    for iso_code, region in iso_to_region_map.items():
+        region_to_iso_map[region].append(iso_code)
 
-    crop_names = set(crop_prices_by_country_df[
-        'earthstat_filename_prefix'].drop_duplicates().dropna())
     country_to_crop_price_map = collections.defaultdict(dict)
     avg_region_to_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(list))
@@ -1734,8 +1735,6 @@ def calculate_global_costs(
         region = iso_to_region_map[iso_name]
         if crop_name not in country_to_crop_price_map[iso_name]:
             value = avg_region_to_crop_price_map[region][crop_name]
-            if crop_name == 'agave' and iso_name == 'IRQ':
-                LOGGER.debug('global value: %s', value)
             # might be a list from previous calculation, convert to avg
             if isinstance(value, list):
                 if value == []:
@@ -1762,47 +1761,71 @@ def calculate_global_costs(
                     '%s,%s,%s\n' % (iso_name, crop_name, price))
 
     calculate_global_average(
-        unique_names, global_crop_price_map.keys(), l_per_ha_cost, 'laborcost',
-        avg_global_labor_cost_table_path)
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        l_per_ha_cost, 'laborcost', avg_global_labor_cost_table_path)
 
     calculate_global_average(
-        unique_names, global_crop_price_map.keys(), m_per_ha_cost,
-        'actual_mach', avg_global_mach_cost_table_path, (9999, 5302))
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        m_per_ha_cost, 'actual_mach', avg_global_mach_cost_table_path,
+        (9999, 5302))
 
     calculate_global_average(
-        unique_names, global_crop_price_map.keys(), s_per_ha_cost, 'low_seed',
-        avg_global_seed_cost_table_path, (9999, 5302))
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        s_per_ha_cost, 'low_seed', avg_global_seed_cost_table_path,
+        (9999, 5302))
 
 
 def calculate_global_average(
-        unique_names, crop_name_set, dataframe, cost_id,
-        target_table_path, remap_group_id_tuple=None):
-    """Calculate `cost_id` average in `dataframe` for all crops."""
+        region_names, region_to_iso_map, crop_names, group_crop_cost_df,
+        cost_id, target_table_path, remap_group_id_tuple=None):
+    """Calculate `cost_id` average in `group_crop_cost_df` for all crops.
+
+    Parameters:
+        region_names (set): set of geographic region names.
+        region_to_iso_map (dict): map the region in `region_names` to a list
+            of country iso codes.
+        crop_names (set): iterable of crop names to calculate on.
+        group_crop_cost_df (pandas.DataFrame): contains columns 'group',
+            'item', and the value of `cost_id`. Used to map the cost of a crop
+            onto a region.
+        cost_id (str): the cost column in `group_crop_cost_df`.
+        target_table_path (str): path to table to create that will contain
+            columns 'iso_name', 'crop', and the value of `cost_id`.
+        remap_grop_id_tuple (tuple): if not None, remaps the value of 'group'
+            in `group_crop_cost_df` in the first element to the second element.
+            This was added to account for the "9999" group of China that we
+            could remap to East Asia.
+
+    Returns:
+        None.
+
+    """
     avg_global_price_map = {}
-    for row in unique_names.iterrows():
+    for row in region_names.iterrows():
         group_name = row[1][1]
         group_id = row[1][0]
         if remap_group_id_tuple and group_id == remap_group_id_tuple[0]:
             group_id = remap_group_id_tuple[1]
         # get the subset of group/item/labor price for this group
-        crop_group = dataframe.loc[dataframe['group'] == group_id]
+        crop_group = group_crop_cost_df.loc[
+            group_crop_cost_df['group'] == group_id]
         crop_names = crop_group['item'].str.lower()
-        avg_labor_cost = crop_group[cost_id].mean()
+        avg_cost = crop_group[cost_id].mean()
         avg_global_price_map[group_name] = {}
-        for crop_name in sorted(crop_name_set):
+        for crop_name in sorted(crop_names):
             if (crop_names.isin([crop_name])).any():
-                labor_cost = float(
+                cost = float(
                     crop_group.loc[crop_group['item'] == crop_name][cost_id])
             else:
-                labor_cost = avg_labor_cost
-            avg_global_price_map[group_name][crop_name] = labor_cost
+                cost = avg_cost
+            avg_global_price_map[group_name][crop_name] = cost
 
     header_list = [x for x in sorted(avg_global_price_map.keys())]
-    with open(target_table_path, 'w') as labor_cost_table:
-        labor_cost_table.write(','.join([''] + header_list) + '\n')
-        for crop_name in sorted(crop_name_set):
-            labor_cost_table.write('"%s",' % crop_name)
-            labor_cost_table.write(','.join([
+    with open(target_table_path, 'w') as cost_table:
+        cost_table.write(','.join([''] + header_list) + '\n')
+        for crop_name in sorted(crop_names):
+            cost_table.write('"%s",' % crop_name)
+            cost_table.write(','.join([
                 str(avg_global_price_map[region][crop_name])
                 for region in header_list]) + '\n')
 
@@ -1914,6 +1937,8 @@ def download_and_preprocess_data(task_graph):
             target_path_list=[crop_price_raster_path],
             task_name='%s price raster' % crop_name)
         price_raster_task_list.append(price_raster_task)
+
+        # create seed cost raster
 
     # need to download everything before we can iterate through it
     task_graph.join()
