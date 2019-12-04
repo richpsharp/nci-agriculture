@@ -102,12 +102,10 @@ AVG_GLOBAL_SEED_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_seed_cost.csv')
 PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_price_scale_factor.csv')
-PER_COUNTRY_CROP_PRICES_TABLE_PATH = os.path.join(
-    CHURN_DIR, 'per_country_crop_prices.csv')
 COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
 COUNTRY_REGION_ISO_TABLE_PATH = os.path.join(
-    CHURN_DIR, os.path.basename(COUNTRY_REGION_ISO_TABLE_URL))
+    ECOSHARD_DIR, os.path.basename(COUNTRY_REGION_ISO_TABLE_URL))
 COUNTRY_ISO_GPKG_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
 CROP_NUTRIENT_TABLE_PATH = os.path.join(
@@ -1714,17 +1712,17 @@ def calculate_global_costs(
     avg_region_to_crop_price_map = collections.defaultdict(
         lambda: collections.defaultdict(list))
     global_crop_price_map = collections.defaultdict(list)
-    crop_name_set = set()
     iso_name_set = set()
     for _, y in crop_prices_by_country_df.iterrows():
         iso_name = str(y[2])
         if iso_name not in iso_to_region_map:
-            LOGGER.debug('skipping %s', iso_name)
+            # Becky says we need only consider the countries in our table
+            # so if there's an extra one it's probably small and/or we don't
+            # care about it.
             continue
         region = iso_to_region_map[iso_name]
         iso_name_set.add(iso_name)
         crop_name = str(y[5])
-        crop_name_set.add(crop_name)
         prices = (y[27:31]).dropna()
         if prices.size > 0:
             price = float(prices.tail(1))
@@ -1732,15 +1730,20 @@ def calculate_global_costs(
             avg_region_to_crop_price_map[region][crop_name].append(price)
             global_crop_price_map[crop_name].append(price)
     for iso_name, crop_name in itertools.product(
-            iso_to_region_map, crop_names):
+            iso_to_region_map, global_crop_price_map):
         region = iso_to_region_map[iso_name]
         if crop_name not in country_to_crop_price_map[iso_name]:
             value = avg_region_to_crop_price_map[region][crop_name]
+            if crop_name == 'agave' and iso_name == 'IRQ':
+                LOGGER.debug('global value: %s', value)
             # might be a list from previous calculation, convert to avg
             if isinstance(value, list):
                 if value == []:
                     value = global_crop_price_map[crop_name]
                     if isinstance(value, list):
+                        if value == []:
+                            LOGGER.error('global %s has no price', crop_name)
+                            sys.exit()
                         value = numpy.mean(value)
                         global_crop_price_map[crop_name] = value
                     avg_region_to_crop_price_map[region][crop_name] = value
@@ -1759,15 +1762,15 @@ def calculate_global_costs(
                     '%s,%s,%s\n' % (iso_name, crop_name, price))
 
     calculate_global_average(
-        unique_names, crop_name_set, l_per_ha_cost, 'laborcost',
+        unique_names, global_crop_price_map.keys(), l_per_ha_cost, 'laborcost',
         avg_global_labor_cost_table_path)
 
     calculate_global_average(
-        unique_names, crop_name_set, m_per_ha_cost, 'actual_mach',
-        avg_global_mach_cost_table_path, (9999, 5302))
+        unique_names, global_crop_price_map.keys(), m_per_ha_cost,
+        'actual_mach', avg_global_mach_cost_table_path, (9999, 5302))
 
     calculate_global_average(
-        unique_names, crop_name_set, s_per_ha_cost, 'low_seed',
+        unique_names, global_crop_price_map.keys(), s_per_ha_cost, 'low_seed',
         avg_global_seed_cost_table_path, (9999, 5302))
 
 
