@@ -84,7 +84,7 @@ FERT_COST_TABLE_URL = (
     'fert_cost_table_md5_a904bab573d7c30633c64a93dbff4347.csv')
 COUNTRY_REGION_ISO_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
-    'country_region_iso_table_md5_c3e68a7351b1275303358f0642dc5109.csv')
+    'country_region_iso_table_md5_a92f42ebb33d9f3fb198cc4909499cdd')
 PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'prices_by_crop_and_country_md5_a1fc8160fac6fa4f34844ab29c92c38a.csv')
@@ -1586,7 +1586,7 @@ def create_price_raster(
         'starting rasterization of %s', target_crop_price_raster_path)
     country_crop_price_df = pandas.read_csv(country_crop_price_table_path)
     country_crop_price_map = {
-        (x[1][1], x[1][2]): float(x[1][3])
+        (x[1][0], x[1][1]): float(x[1][2])
         for x in country_crop_price_df.iterrows()
     }
     pygeoprocessing.new_raster_from_base(
