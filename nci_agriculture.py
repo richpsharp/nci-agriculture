@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = max(1, multiprocessing.cpu_count())
+N_WORKERS = -1 # max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -82,18 +82,15 @@ AG_COST_TABLE_URL = (
 FERT_COST_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'fert_cost_table_md5_a904bab573d7c30633c64a93dbff4347.csv')
-COUNTRY_TO_REGION_TABLE_URL = (
+COUNTRY_REGION_ISO_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
-    'country_region_md5_ca9eda9f06dcdca00808b7c178afa044.csv')
+    'country_region_iso_table_md5_c3e68a7351b1275303358f0642dc5109.csv')
 PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'prices_by_crop_and_country_md5_a1fc8160fac6fa4f34844ab29c92c38a.csv')
 CROP_NUTRIENT_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'crop_nutrient_md5_2fbe7455357f8008a12827fd88816fc1.csv')
-COUNTRY_NAME_TO_ISO_URL = (
-    'https://storage.googleapis.com/nci-ecoshards/'
-    'country_name_to_iso_md5_08dc8f568e070405feaa454f330b8291.csv')
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -107,20 +104,16 @@ PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_price_scale_factor.csv')
 PER_COUNTRY_CROP_PRICES_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_crop_prices.csv')
-COUNTRY_TO_REGION_TABLE_PATH = os.path.join(
-    CHURN_DIR, 'country_region.csv')
 COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
+COUNTRY_REGION_ISO_TABLE_PATH = os.path.join(
+    CHURN_DIR, os.path.basename(COUNTRY_REGION_ISO_TABLE_URL))
 COUNTRY_ISO_GPKG_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(COUNTRY_ISO_GPKG_URL))
 CROP_NUTRIENT_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(CROP_NUTRIENT_URL))
 PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_URL))
-COUNTRY_NAME_TO_ISO_TABLE_PATH = os.path.join(
-    ECOSHARD_DIR, os.path.basename(COUNTRY_NAME_TO_ISO_URL))
-REGION_TO_COUNTRY_TABLE_PATH = os.path.join(
-    ECOSHARD_DIR, os.path.basename(COUNTRY_TO_REGION_TABLE_URL))
 YIELD_AND_HAREA_RASTER_DIR = os.path.join(
     ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 
@@ -179,6 +172,7 @@ def calculate_for_landcover(task_graph, landcover_path):
             target_10s_value_path],
         task_name=f"""create prod raster {
             os.path.basename(target_10s_value_path)}""")
+    value_total_task.join()
 
     # do poll dep value
     target_10km_prod_dep_value_yield_path = os.path.join(
@@ -1649,13 +1643,11 @@ def fractional_add_op(base_array, new_array, frac_val, nodata):
 def calculate_global_costs(
         ag_costs_table_path,
         prices_by_crop_and_country_table_path,
-        country_to_region_table_path,
-        country_name_to_iso_table_path,
+        country_region_iso_table_path,
         avg_global_labor_cost_table_path,
         avg_global_mach_cost_table_path,
         avg_global_seed_cost_table_path,
-        country_crop_price_table_path,
-        region_to_country_table_path):
+        country_crop_price_table_path):
     """Parse a global crop prices and ag cost table into per-country prices.
 
     Parameters:
@@ -1665,36 +1657,29 @@ def calculate_global_costs(
             where 'group' and 'group_name' identify the geographic region,
             'item' is the crop name and other headers correspond to fertilizer,
             labor, machine, and seed prices.
-        prices_by_crop_and_country_table_path (str): path to a CSV table with headers:
-            'earthstat_filename_prefix', '2010' to '2014', 'aadm0_a3'.
+        prices_by_crop_and_country_table_path (str): path to a CSV table with
+            headers: 'earthstat_filename_prefix', '2010' to '2014', 'aadm0_a3'.
             This table is used to calculate the per-country price if one exists
             between 2010 and 2014 (most recent used). Also used to calculate
             regional per-crop averages
-        country_to_region_table_path (str): path to table that maps "Area_name"
-            which correspond to 'AreaName' prices by crop and country
-            to 'Group_name' which corresponds to 'group_name' in the ag costs
-            table path.
-        country_name_to_iso_table_path (str): path to CSV that has the fields
-            'Area_name', and 'ISO3' corresponding to the name of the country and
-            it's ISO3 code which in turn corresponds with the country in
-            `country_iso_gpkg_path`.
+        country_region_iso_table_path (str): path to table that maps
+            'Group_name', 'Area_name', and 'ISO3' for each
+            region/country/iso code.
         avg_global_labor_cost_table_path (str): create a 2D table whose rows
-            (and first column) correspond to crop name and columns correspond to
-            geographic regions while values correspond to cost per Ha for that
-            crop.
+            (and first column) correspond to crop name and columns correspond
+            to geographic regions while values correspond to cost per Ha for
+            that crop.
         avg_global_mach_cost_table_path (str):  create a 2D table whose rows
-            (and first column) correspond to crop name and columns correspond to
-            geographic regions while values correspond to machinery cost per
+            (and first column) correspond to crop name and columns correspond
+            to geographic regions while values correspond to machinery cost per
             Ha for that crop.
         avg_global_seed_cost_table_path (str):  create a 2D table whose rows
-            (and first column) correspond to crop name and columns correspond to
-            geographic regions while values correspond to machinery cost per
+            (and first column) correspond to crop name and columns correspond
+            to geographic regions while values correspond to machinery cost per
             Ha for that crop.
         country_crop_price_table_path (str): create table with columns
             'country', 'iso_name', 'crop', 'price'. Not sure of the price
             units.
-        region_to_country_table_path (str): table mapping country name/ISO
-            to regions used in the other tables.
 
     Returns:
         None
@@ -1715,28 +1700,13 @@ def calculate_global_costs(
 
     crop_prices_by_country_df = pandas.read_csv(
         prices_by_crop_and_country_table_path)
-    country_to_region_df = pandas.read_csv(
-        country_to_region_table_path, encoding="ISO-8859-1")
-    country_to_region_map = {
-        x[1]['Area_name']: x[1]['Group_name']
-        for x in country_to_region_df.iterrows()
+    LOGGER.debug(country_region_iso_table_path)
+    country_region_iso_df = pandas.read_csv(
+        country_region_iso_table_path, encoding="ISO-8859-1")
+    iso_to_region_map = {
+        x[1]['ISO3']: x[1]['Group_name']
+        for x in country_region_iso_df.iterrows()
     }
-
-    country_to_iso_df = pandas.read_csv(
-        country_name_to_iso_table_path, encoding="ISO-8859-1")
-    country_to_iso_name_map = {}
-    LOGGER.debug(country_to_iso_df)
-    country_names = set()
-    for _, row in country_to_iso_df.iterrows():
-        # 0 is the country name, 1 is the ISO code
-        iso_code = row[1]
-        country_name = row[0]
-        LOGGER.debug(row[0])
-        LOGGER.debug('%s:%s', iso_code, country_name)
-        country_to_iso_name_map[country_name] = iso_code
-        country_names.add(country_name)
-    # country_vector = gdal.OpenEx(country_iso_gpkg_path)
-    # country_layer = country_vector.GetLayer()
 
     crop_names = set(crop_prices_by_country_df[
         'earthstat_filename_prefix'].drop_duplicates().dropna())
@@ -1745,21 +1715,26 @@ def calculate_global_costs(
         lambda: collections.defaultdict(list))
     global_crop_price_map = collections.defaultdict(list)
     crop_name_set = set()
+    iso_name_set = set()
     for _, y in crop_prices_by_country_df.iterrows():
-        country_name = str(y[3])
-        region = country_to_region_map[country_name]
+        iso_name = str(y[2])
+        if iso_name not in iso_to_region_map:
+            LOGGER.debug('skipping %s', iso_name)
+            continue
+        region = iso_to_region_map[iso_name]
+        iso_name_set.add(iso_name)
         crop_name = str(y[5])
         crop_name_set.add(crop_name)
         prices = (y[27:31]).dropna()
         if prices.size > 0:
             price = float(prices.tail(1))
-            country_to_crop_price_map[country_name][crop_name] = price
+            country_to_crop_price_map[iso_name][crop_name] = price
             avg_region_to_crop_price_map[region][crop_name].append(price)
             global_crop_price_map[crop_name].append(price)
-    for country_name, crop_name in itertools.product(
-            country_names, crop_names):
-        region = country_to_region_map[country_name]
-        if crop_name not in country_to_crop_price_map[country_name]:
+    for iso_name, crop_name in itertools.product(
+            iso_to_region_map, crop_names):
+        region = iso_to_region_map[iso_name]
+        if crop_name not in country_to_crop_price_map[iso_name]:
             value = avg_region_to_crop_price_map[region][crop_name]
             # might be a list from previous calculation, convert to avg
             if isinstance(value, list):
@@ -1772,17 +1747,16 @@ def calculate_global_costs(
                 else:
                     value = numpy.mean(value)
                     avg_region_to_crop_price_map[region][crop_name] = value
-            country_to_crop_price_map[country_name][crop_name] = value
+            country_to_crop_price_map[iso_name][crop_name] = value
+
     with open(country_crop_price_table_path, 'w') as country_crop_price_table:
-        country_crop_price_table.write('country,iso_name,crop,price\n')
-        for country_name in sorted(country_to_crop_price_map):
-            price_map = country_to_crop_price_map[country_name]
-            iso_name = country_to_iso_name_map[country_name]
+        country_crop_price_table.write('iso_name,crop,price\n')
+        for iso_name in sorted(country_to_crop_price_map):
+            price_map = country_to_crop_price_map[iso_name]
             for crop_name in sorted(price_map):
                 price = price_map[crop_name]
                 country_crop_price_table.write(
-                    '%s,%s,%s,%s\n' % (
-                        country_name, iso_name, crop_name, price))
+                    '%s,%s,%s\n' % (iso_name, crop_name, price))
 
     calculate_global_average(
         unique_names, crop_name_set, l_per_ha_cost, 'laborcost',
@@ -1795,17 +1769,6 @@ def calculate_global_costs(
     calculate_global_average(
         unique_names, crop_name_set, s_per_ha_cost, 'low_seed',
         avg_global_seed_cost_table_path, (9999, 5302))
-
-    with open(region_to_country_table_path, 'w') as (
-                region_to_country_table_file):
-        region_to_country_table_file.write('country,iso,region\n')
-        LOGGER.debug(country_to_iso_name_map)
-        for country in country_to_iso_name_map:
-            region_to_country_table_file.write(
-                '%s,%s,%s\n' % (
-                    country,
-                    country_to_iso_name_map[country],
-                    country_to_region_map[country]))
 
 
 def calculate_global_average(
@@ -1859,12 +1822,12 @@ def download_and_preprocess_data(task_graph):
         target_path_list=[CROP_NUTRIENT_TABLE_PATH],
         task_name=f'fetch {os.path.basename(CROP_NUTRIENT_TABLE_PATH)}')
 
-    country_to_iso_table_fetch_task = task_graph.add_task(
+    country_region_iso_table_fetch_task = task_graph.add_task(
         func=ecoshard.download_url,
         args=(
-            COUNTRY_NAME_TO_ISO_URL, COUNTRY_NAME_TO_ISO_TABLE_PATH),
-        target_path_list=[COUNTRY_NAME_TO_ISO_TABLE_PATH],
-        task_name=f'fetch {os.path.basename(COUNTRY_NAME_TO_ISO_TABLE_PATH)}')
+            COUNTRY_REGION_ISO_TABLE_URL, COUNTRY_REGION_ISO_TABLE_PATH),
+        target_path_list=[COUNTRY_REGION_ISO_TABLE_PATH],
+        task_name=f'fetch {os.path.basename(COUNTRY_REGION_ISO_TABLE_PATH)}')
 
     zip_touch_file_path = os.path.join(
         ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
@@ -1891,14 +1854,6 @@ def download_and_preprocess_data(task_graph):
         target_path_list=[fert_costs_table_path],
         task_name='download fert cost table')
 
-    country_to_region_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(COUNTRY_TO_REGION_TABLE_PATH))
-    ag_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(COUNTRY_TO_REGION_TABLE_URL, country_to_region_table_path),
-        target_path_list=[country_to_region_table_path],
-        task_name='country to region table')
-
     prices_by_crop_and_country_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH))
     ag_cost_table_task = task_graph.add_task(
@@ -1922,19 +1877,16 @@ def download_and_preprocess_data(task_graph):
         args=(
             ag_costs_table_path,
             prices_by_crop_and_country_table_path,
-            country_to_region_table_path,
-            COUNTRY_NAME_TO_ISO_TABLE_PATH,
+            COUNTRY_REGION_ISO_TABLE_PATH,
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH,
-            REGION_TO_COUNTRY_TABLE_PATH),
+            COUNTRY_CROP_PRICE_TABLE_PATH),
         target_path_list=[
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
-            COUNTRY_CROP_PRICE_TABLE_PATH,
-            REGION_TO_COUNTRY_TABLE_PATH],
+            COUNTRY_CROP_PRICE_TABLE_PATH],
         dependent_task_list=[
             ag_cost_table_task, country_iso_gpkg_task],
         task_name='calc global costs')
