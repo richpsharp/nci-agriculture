@@ -1819,15 +1819,25 @@ def calculate_global_average(
             else:
                 cost = avg_cost
             avg_global_price_map[group_name][crop_name] = cost
+            LOGGER.debug(group_name)
 
-    header_list = [x for x in sorted(avg_global_price_map.keys())]
     with open(target_table_path, 'w') as cost_table:
-        cost_table.write(','.join([''] + header_list) + '\n')
-        for crop_name in sorted(crop_names):
-            cost_table.write('"%s",' % crop_name)
-            cost_table.write(','.join([
-                str(avg_global_price_map[region][crop_name])
-                for region in header_list]) + '\n')
+        cost_table.write('iso_name,crop,%s\n' % cost_id)
+        for region in sorted(avg_global_price_map):
+            LOGGER.debug(region)
+            for iso_code in sorted(region_to_iso_map[region]):
+                LOGGER.debug(iso_code)
+                for crop_name in sorted(crop_names):
+                    LOGGER.debug(crop_name)
+                    if crop_name not in avg_global_price_map[region]:
+                        avg_cost = numpy.mean(
+                            [avg_global_price_map[x][crop_name]
+                             for x in avg_global_price_map
+                             if crop_name in avg_global_price_map[x]])
+                    else:
+                        avg_cost = avg_global_price_map[region][crop_name]
+                    cost_table.write('%s,"%s",%f\n' % (
+                        iso_code, crop_name, avg_cost))
 
 
 def download_and_preprocess_data(task_graph):
