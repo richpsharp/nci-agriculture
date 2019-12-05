@@ -92,7 +92,6 @@ FERT_USAGE_RASTERS_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'Fertilizer2000toMarijn_geotiff_md5_2bcd8efada8228f2b90e1491abf96645.zip')
 
-
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
 AVG_GLOBAL_LABOR_COST_TABLE_PATH = os.path.join(
@@ -121,8 +120,12 @@ PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_URL))
 YIELD_AND_HAREA_RASTER_DIR = os.path.join(
     ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
-
+FERT_APP_RATE_DIR = os.path.join(
+    ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff')
 CROP_PRICE_DIR = os.path.join(CHURN_DIR, 'crop_prices')
+CROP_COSTS_DIR = os.path.join(CHURN_DIR, 'crop_costs')
+FERT_USAGE_DIR = os.path.join(
+    ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff')
 
 
 def calculate_for_landcover(task_graph, landcover_path):
@@ -1978,12 +1981,19 @@ def download_and_preprocess_data(task_graph):
     price_raster_task_list = []
     base_abaca_raster_path = os.path.join(
             YIELD_AND_HAREA_RASTER_DIR, 'abaca_yield.tif')
+    fert_cost_raster_path_map = {}
+    try:
+        os.makedirs(CROP_COSTS_DIR)
+    except OSError:
+        pass
+
     for fert_type, fert_table_path in [
             ('avg_N', AVG_GLOBAL_N_COST_TABLE_PATH),
             ('avg_P', AVG_GLOBAL_P_COST_TABLE_PATH),
             ('avg_K', AVG_GLOBAL_K_COST_TABLE_PATH)]:
         fert_cost_raster_path = os.path.join(
-            CROP_PRICE_DIR, 'global_%s.tif' % (fert_type,))
+            CROP_COSTS_DIR, 'global_%s.tif' % (fert_type,))
+        fert_cost_raster_path_map[fert_type] = fert_cost_raster_path
         price_raster_task = task_graph.add_task(
             func=cost_table_to_raster,
             args=(
@@ -1997,14 +2007,42 @@ def download_and_preprocess_data(task_graph):
             task_name='%s %s raster' % ('global', fert_type))
         price_raster_task_list.append(price_raster_task)
 
-    task_graph.join()
-    return
-
     # Create global price rasters
-    for yield_raster_path in glob.glob(os.path.join(
-            YIELD_AND_HAREA_RASTER_DIR, '*_yield.tif')):
+    for k_app_rate_path in glob.glob(os.path.join(
+            FERT_USAGE_DIR, '*K2Oapprate.tif')):
         crop_name = re.match(
-            '([^_]+)_.*\.tif', os.path.basename(yield_raster_path))[1]
+            '([^_]+)K2Oapprate\.tif', os.path.basename(k_app_rate_path))[1]
+        yield_raster_path = os.path.join(
+            YIELD_AND_HAREA_RASTER_DIR, '%s_yield.tif' % crop_name)
+        p_app_rate_path = os.path.join(
+            FERT_USAGE_DIR, '%sP2O5apprate.tif' % crop_name)
+        n_app_rate_path = os.path.join(
+            FERT_USAGE_DIR, '%sNapprate.tif' % crop_name)
+        if not os.path.exists(yield_raster_path):
+            LOGGER.debug('skipping fert raster called %s', crop_name)
+            continue
+
+        total_fert_cost_raster_path = os.path.join(
+            CROP_COSTS_DIR, '%s_fert_cost_rate.tif')
+
+        raster_path_band_list = [
+            (k_app_rate_path, 1),
+            (p_app_rate_path, 1),
+            (n_app_rate_path, 1),
+            (fert_cost_raster_path_map['avg_K'], 1),
+            (fert_cost_raster_path_map['avg_P'], 1),
+            (fert_cost_raster_path_map['avg_N'], 1)]
+
+        nodata_list = [
+            (pygeoprocessing.get_raster_info(path_band[0])['nodata'][0], 'raw')
+            for path_band in raster_path_band_list]
+
+        pygeoprocessing.raster_calculator(
+            raster_path_band_list + nodata_list + [(-1, 'raw')],
+            dot_prod_op, total_fert_cost_raster_path, gdal.GDT_Float32, -1)
+
+        sys.exit()
+
         for cost_id, cost_table_path in [
                 ('laborcost', AVG_GLOBAL_LABOR_COST_TABLE_PATH),
                 ('actual_mach', AVG_GLOBAL_MACH_COST_TABLE_PATH),
@@ -2027,6 +2065,32 @@ def download_and_preprocess_data(task_graph):
 
     # need to download everything before we can iterate through it
     task_graph.join()
+
+
+def dot_prod_op(*raster_nodata_list):
+    """Do a dot product of vectors A*B.
+
+    Parameters:
+        raster_nodata_list (list): list of 4*n+1 length where the first n
+            elements are from vector A, the next n are B, and last 2n are
+            nodata values for those elements in order.
+
+    Returns:
+        A*B and nodata where it overlaps.
+
+    """
+    n_elements = (len(raster_nodata_list)-1) // 4
+    result = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.float32)
+    nodata_mask = numpy.zeros(result.shape)
+    for index in range(n_elements*2):
+        nodata_mask |= numpy.isclose(
+            raster_nodata_list[index], raster_nodata_list[index+n_elements*2])
+    for index in range(n_elements*2):
+        result[~nodata_mask] += (
+            raster_nodata_list[index][~nodata_mask] *
+            raster_nodata_list[index+n_elements][~nodata_mask])
+    result[nodata_mask] = raster_nodata_list[-1]
+    return result
 
 
 if __name__ == '__main__':
