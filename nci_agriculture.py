@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = -1  # max(1, multiprocessing.cpu_count())
+N_WORKERS = max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -1602,7 +1602,7 @@ def cost_table_to_raster(
     }
     pygeoprocessing.new_raster_from_base(
         base_raster_path, target_cost_raster_path, gdal.GDT_Float32,
-        [-1], fill_value_list=[-1])
+        [_MULT_NODATA], fill_value_list=[_MULT_NODATA])
     memory_driver = ogr.GetDriverByName('MEMORY')
     country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
     country_layer = country_vector.GetLayer()
@@ -1803,7 +1803,6 @@ def calculate_global_costs(
         s_per_ha_cost, 'low_seed', avg_global_seed_cost_table_path,
         (9999, 5302))
 
-    LOGGER.debug(n_per_ha_cost)
     calculate_global_average(
         region_names, region_to_iso_map, global_crop_price_map.keys(),
         n_per_ha_cost, 'avg_N', avg_global_n_cost_table_path,
@@ -2036,15 +2035,14 @@ def download_and_preprocess_data(task_graph):
             (fert_cost_raster_path_map['avg_N'], 1)]
 
         nodata_list = [
-            (pygeoprocessing.get_raster_info(path_band[0])['nodata'][0], 'raw')
-            for path_band in raster_path_band_list]
+            (_MULT_NODATA, 'raw') for path_band in raster_path_band_list]
 
         fert_cost_task = task_graph.add_task(
             func=pygeoprocessing.raster_calculator,
             args=(
-                raster_path_band_list + nodata_list + [(-1, 'raw')],
+                raster_path_band_list + nodata_list + [(_MULT_NODATA, 'raw')],
                 dot_prod_op, total_fert_cost_raster_path, gdal.GDT_Float32,
-                -1),
+                _MULT_NODATA),
             dependent_task_list=price_raster_task_list,
             target_path_list=[total_fert_cost_raster_path],
             task_name='fert cost for %s' % crop_name)
@@ -2083,17 +2081,15 @@ def download_and_preprocess_data(task_graph):
             (cost_raster_path_map['actual_mach'], 1),
             (cost_raster_path_map['low_seed'], 1)]
         nodata_list = [
-            (pygeoprocessing.get_raster_info(
-                path_band[0])['nodata'][path_band[1]-1], 'raw')
-            for path_band in cost_raster_path_band_list]
+            (_MULT_NODATA, 'raw') for _ in cost_raster_path_band_list]
         total_cost_raster_task = task_graph.add_task(
             func=pygeoprocessing.raster_calculator,
             args=(
-                cost_raster_path_band_list + nodata_list + [(-1, 'raw')],
+                cost_raster_path_band_list + nodata_list + [(_MULT_NODATA, 'raw')],
                 sum_rasters_op,
                 total_cost_path,
                 gdal.GDT_Float32,
-                -1),
+                _MULT_NODATA),
             dependent_task_list=price_raster_task_list + [fert_cost_task],
             target_path_list=[total_cost_path],
             task_name='total cost for %s' % crop_name)
@@ -2117,7 +2113,7 @@ def sum_rasters_op(*raster_nodata_list):
 
     """
     result = numpy.empty(raster_nodata_list[0].shape, dtype=numpy.float32)
-    result[:] = raster_nodata_list[-1]
+    result[:] = raster_nodata_list[_MULT_NODATA]
     n = len(raster_nodata_list) // 2
     for index in range(n):
         valid_mask = ~numpy.isclose(
@@ -2148,7 +2144,7 @@ def dot_prod_op(*raster_nodata_list):
         result[~nodata_mask] += (
             raster_nodata_list[index][~nodata_mask] *
             raster_nodata_list[index+n_elements][~nodata_mask])
-    result[nodata_mask] = raster_nodata_list[-1]
+    result[nodata_mask] = raster_nodata_list[_MULT_NODATA]
     return result
 
 
