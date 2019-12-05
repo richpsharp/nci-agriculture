@@ -79,9 +79,6 @@ YIELD_AND_HAREA_ZIP_URL = (
 AG_COST_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'ag_cost_md5_872f0d09f6d7add60c733cccc3b26987.csv')
-FERT_COST_TABLE_URL = (
-    'https://storage.googleapis.com/nci-ecoshards/'
-    'fert_cost_table_md5_a904bab573d7c30633c64a93dbff4347.csv')
 COUNTRY_REGION_ISO_TABLE_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'country_region_iso_table_md5_a92f42ebb33d9f3fb198cc4909499cdd.csv')
@@ -91,6 +88,10 @@ PRICES_BY_CROP_AND_COUNTRY_TABLE_URL = (
 CROP_NUTRIENT_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'crop_nutrient_md5_2fbe7455357f8008a12827fd88816fc1.csv')
+FERT_USAGE_RASTERS_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'Fertilizer2000toMarijn_geotiff_md5_2bcd8efada8228f2b90e1491abf96645.zip')
+
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -100,6 +101,12 @@ AVG_GLOBAL_MACH_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_mach_cost.csv')
 AVG_GLOBAL_SEED_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_seed_cost.csv')
+AVG_GLOBAL_N_COST_TABLE_PATH = os.path.join(
+    CHURN_DIR, 'global_N_cost.csv')
+AVG_GLOBAL_P_COST_TABLE_PATH = os.path.join(
+    CHURN_DIR, 'global_P_cost.csv')
+AVG_GLOBAL_K_COST_TABLE_PATH = os.path.join(
+    CHURN_DIR, 'global_K_cost.csv')
 PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_price_scale_factor.csv')
 COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
@@ -1645,6 +1652,9 @@ def calculate_global_costs(
         avg_global_labor_cost_table_path,
         avg_global_mach_cost_table_path,
         avg_global_seed_cost_table_path,
+        avg_global_n_cost_table_path,
+        avg_global_p_cost_table_path,
+        avg_global_k_cost_table_path,
         country_crop_price_table_path):
     """Parse a global crop prices and ag cost table into per-country prices.
 
@@ -1675,6 +1685,12 @@ def calculate_global_costs(
             (and first column) correspond to crop name and columns correspond
             to geographic regions while values correspond to machinery cost per
             Ha for that crop.
+        avg_global_n_cost_table_path (str): table with 'iso', 'crop', and
+            'N_cost' fields.
+        avg_global_p_cost_table_path (str): table with 'iso', 'crop', and
+            'P_cost' fields.
+        avg_global_k_cost_table_path (str): table with 'iso', 'crop', and
+            'K_cost' fields.
         country_crop_price_table_path (str): create table with columns
             'country', 'iso_name', 'crop', 'price'. Not sure of the price
             units.
@@ -1694,6 +1710,15 @@ def calculate_global_costs(
         ['group', 'item', 'actual_mach']].drop_duplicates().dropna(how='any')
     s_per_ha_cost = ag_costs_df[
         ['group', 'item', 'low_seed']].drop_duplicates().dropna(
+            how='any')
+    n_per_ha_cost = ag_costs_df[
+        ['group', 'item', 'avg_N']].drop_duplicates().dropna(
+            how='any')
+    p_per_ha_cost = ag_costs_df[
+        ['group', 'item', 'avg_P']].drop_duplicates().dropna(
+            how='any')
+    k_per_ha_cost = ag_costs_df[
+        ['group', 'item', 'avg_K']].drop_duplicates().dropna(
             how='any')
 
     crop_prices_by_country_df = pandas.read_csv(
@@ -1774,6 +1799,22 @@ def calculate_global_costs(
         s_per_ha_cost, 'low_seed', avg_global_seed_cost_table_path,
         (9999, 5302))
 
+    LOGGER.debug(n_per_ha_cost)
+    calculate_global_average(
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        n_per_ha_cost, 'avg_N', avg_global_n_cost_table_path,
+        (9999, 5302))
+
+    calculate_global_average(
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        p_per_ha_cost, 'avg_P', avg_global_p_cost_table_path,
+        (9999, 5302))
+
+    calculate_global_average(
+        region_names, region_to_iso_map, global_crop_price_map.keys(),
+        k_per_ha_cost, 'avg_K', avg_global_k_cost_table_path,
+        (9999, 5302))
+
 
 def calculate_global_average(
         region_names, region_to_iso_map, crop_names, group_crop_cost_df,
@@ -1819,7 +1860,6 @@ def calculate_global_average(
             else:
                 cost = avg_cost
             avg_global_price_map[group_name][crop_name] = cost
-            LOGGER.debug(group_name)
 
     with open(target_table_path, 'w') as cost_table:
         cost_table.write('iso_name,crop,%s\n' % cost_id)
@@ -1862,14 +1902,23 @@ def download_and_preprocess_data(task_graph):
         target_path_list=[COUNTRY_REGION_ISO_TABLE_PATH],
         task_name=f'fetch {os.path.basename(COUNTRY_REGION_ISO_TABLE_PATH)}')
 
-    zip_touch_file_path = os.path.join(
-        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.txt')
-    yield_and_harea_task = task_graph.add_task(
+    yield_and_harea_zip_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea.COMPLETE')
+    yield_and_harea_dl_zip_task = task_graph.add_task(
         func=download_and_unzip,
         args=(YIELD_AND_HAREA_ZIP_URL, ECOSHARD_DIR,
-              zip_touch_file_path),
-        target_path_list=[zip_touch_file_path],
+              yield_and_harea_zip_touch_file_path),
+        target_path_list=[yield_and_harea_zip_touch_file_path],
         task_name='download and unzip yield and harea')
+
+    fert_usage_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff.COMPLETE')
+    fert_usage_dl_zip_task = task_graph.add_task(
+        func=download_and_unzip,
+        args=(FERT_USAGE_RASTERS_URL, ECOSHARD_DIR,
+              fert_usage_touch_file_path),
+        target_path_list=[fert_usage_touch_file_path],
+        task_name='download and unzip fertilizer')
 
     ag_costs_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
@@ -1878,14 +1927,6 @@ def download_and_preprocess_data(task_graph):
         args=(AG_COST_TABLE_URL, ag_costs_table_path),
         target_path_list=[ag_costs_table_path],
         task_name='download ag cost table')
-
-    fert_costs_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(FERT_COST_TABLE_URL))
-    fert_cost_table_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(FERT_COST_TABLE_URL, fert_costs_table_path),
-        target_path_list=[fert_costs_table_path],
-        task_name='download fert cost table')
 
     prices_by_crop_and_country_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH))
@@ -1914,18 +1955,52 @@ def download_and_preprocess_data(task_graph):
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
+            AVG_GLOBAL_N_COST_TABLE_PATH,
+            AVG_GLOBAL_P_COST_TABLE_PATH,
+            AVG_GLOBAL_K_COST_TABLE_PATH,
             COUNTRY_CROP_PRICE_TABLE_PATH),
         target_path_list=[
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
             AVG_GLOBAL_SEED_COST_TABLE_PATH,
+            AVG_GLOBAL_N_COST_TABLE_PATH,
+            AVG_GLOBAL_P_COST_TABLE_PATH,
+            AVG_GLOBAL_K_COST_TABLE_PATH,
             COUNTRY_CROP_PRICE_TABLE_PATH],
         dependent_task_list=[
             ag_cost_table_task, country_iso_gpkg_task],
         task_name='calc global costs')
     calc_global_costs_task.join()
-    # Create global price rasters
+
+    # fert cost is irrespective of crop despite our table showing it's per crop
+    # it was just easier to make that table then we could rasterize a single
+    # country as the global
     price_raster_task_list = []
+    base_abaca_raster_path = os.path.join(
+            YIELD_AND_HAREA_RASTER_DIR, 'abaca_yield.tif')
+    for fert_type, fert_table_path in [
+            ('avg_N', AVG_GLOBAL_N_COST_TABLE_PATH),
+            ('avg_P', AVG_GLOBAL_P_COST_TABLE_PATH),
+            ('avg_K', AVG_GLOBAL_K_COST_TABLE_PATH)]:
+        fert_cost_raster_path = os.path.join(
+            CROP_PRICE_DIR, 'global_%s.tif' % (fert_type,))
+        price_raster_task = task_graph.add_task(
+            func=cost_table_to_raster,
+            args=(
+                # yield_raster_path is only used as a base raster for getting
+                # the shape & size consisten
+                base_abaca_raster_path, COUNTRY_ISO_GPKG_PATH,
+                fert_table_path, 'abaca',  # pick abaca since one-shot global
+                fert_cost_raster_path),
+            ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
+            target_path_list=[fert_cost_raster_path],
+            task_name='%s %s raster' % ('global', fert_type))
+        price_raster_task_list.append(price_raster_task)
+
+    task_graph.join()
+    return
+
+    # Create global price rasters
     for yield_raster_path in glob.glob(os.path.join(
             YIELD_AND_HAREA_RASTER_DIR, '*_yield.tif')):
         crop_name = re.match(
