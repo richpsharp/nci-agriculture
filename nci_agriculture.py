@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = -1 # max(1, multiprocessing.cpu_count())
+N_WORKERS = -1  # max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -124,6 +124,7 @@ FERT_APP_RATE_DIR = os.path.join(
     ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff')
 CROP_PRICE_DIR = os.path.join(CHURN_DIR, 'crop_prices')
 CROP_COSTS_DIR = os.path.join(CHURN_DIR, 'crop_costs')
+CROP_COSTS_WORKING_DIR = os.path.join(CROP_COSTS_DIR, 'per_element_costs')
 FERT_USAGE_DIR = os.path.join(
     ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff')
 
@@ -1983,7 +1984,8 @@ def download_and_preprocess_data(task_graph):
             YIELD_AND_HAREA_RASTER_DIR, 'abaca_yield.tif')
     fert_cost_raster_path_map = {}
     try:
-        os.makedirs(CROP_COSTS_DIR)
+        # this makes the crop cost AND working directories
+        os.makedirs(CROP_COSTS_WORKING_DIR)
     except OSError:
         pass
 
@@ -1992,7 +1994,7 @@ def download_and_preprocess_data(task_graph):
             ('avg_P', AVG_GLOBAL_P_COST_TABLE_PATH),
             ('avg_K', AVG_GLOBAL_K_COST_TABLE_PATH)]:
         fert_cost_raster_path = os.path.join(
-            CROP_COSTS_DIR, 'global_%s.tif' % (fert_type,))
+            CROP_COSTS_WORKING_DIR, 'global_%s.tif' % (fert_type,))
         fert_cost_raster_path_map[fert_type] = fert_cost_raster_path
         price_raster_task = task_graph.add_task(
             func=cost_table_to_raster,
@@ -2023,7 +2025,7 @@ def download_and_preprocess_data(task_graph):
             continue
 
         total_fert_cost_raster_path = os.path.join(
-            CROP_COSTS_DIR, '%s_fert_cost_rate.tif' % crop_name)
+            CROP_COSTS_WORKING_DIR, '%s_fert_cost_rate.tif' % crop_name)
 
         raster_path_band_list = [
             (k_app_rate_path, 1),
@@ -2047,22 +2049,24 @@ def download_and_preprocess_data(task_graph):
             target_path_list=[total_fert_cost_raster_path],
             task_name='fert cost for %s' % crop_name)
 
+        cost_raster_path_map = {}
         for cost_id, working_dir, cost_table_path in [
-                ('laborcost', CROP_COSTS_DIR,
+                ('laborcost', CROP_COSTS_WORKING_DIR,
                  AVG_GLOBAL_LABOR_COST_TABLE_PATH),
-                ('actual_mach', CROP_COSTS_DIR,
+                ('actual_mach', CROP_COSTS_WORKING_DIR,
                  AVG_GLOBAL_MACH_COST_TABLE_PATH),
-                ('low_seed', CROP_COSTS_DIR,
+                ('low_seed', CROP_COSTS_WORKING_DIR,
                  AVG_GLOBAL_SEED_COST_TABLE_PATH),
                 ('price', CROP_PRICE_DIR,
                  COUNTRY_CROP_PRICE_TABLE_PATH)]:
             cost_raster_path = os.path.join(
                 working_dir, '%s_%s.tif' % (crop_name, cost_id))
+            cost_raster_path_map[cost_id] = cost_raster_path
             price_raster_task = task_graph.add_task(
                 func=cost_table_to_raster,
                 args=(
-                    # yield_raster_path is only used as a base raster for getting
-                    # the shape & size consisten
+                    # yield_raster_path is only used as a base raster for
+                    # getting the shape & size consisten
                     yield_raster_path, COUNTRY_ISO_GPKG_PATH,
                     cost_table_path, crop_name,
                     cost_raster_path),
@@ -2070,10 +2074,56 @@ def download_and_preprocess_data(task_graph):
                 target_path_list=[cost_raster_path],
                 task_name='%s %s raster' % (crop_name, cost_id))
             price_raster_task_list.append(price_raster_task)
-        break
 
+        total_cost_path = os.path.join(
+            CROP_COSTS_DIR, '%s_total_cost.tif' % crop_name)
+        cost_raster_path_band_list = [
+            (total_fert_cost_raster_path, 1),
+            (cost_raster_path_map['laborcost'], 1),
+            (cost_raster_path_map['actual_mach'], 1),
+            (cost_raster_path_map['low_seed'], 1)]
+        nodata_list = [
+            (pygeoprocessing.get_raster_info(
+                path_band[0])['nodata'][path_band[1]-1], 'raw')
+            for path_band in cost_raster_path_band_list]
+        total_cost_raster_task = task_graph.add_task(
+            func=pygeoprocessing.raster_calculator,
+            args=(
+                cost_raster_path_band_list + nodata_list + [(-1, 'raw')],
+                sum_rasters_op,
+                total_cost_path,
+                gdal.GDT_Float32,
+                -1),
+            dependent_task_list=price_raster_task_list + [fert_cost_task],
+            target_path_list=[total_cost_path],
+            task_name='total cost for %s' % crop_name)
+        total_cost_raster_task.join()
+        break
     # need to download everything before we can iterate through it
     task_graph.join()
+
+
+def sum_rasters_op(*raster_nodata_list):
+    """Sum all non-nodata values.
+
+    Parameters:
+        raster_nodata_list (list): list of 2n+1 length where the first n
+            elements are raster array values and the second n elements are the
+            nodata values for that array. The last element is the target
+            nodata.
+
+    Returns:
+        sum(raster_nodata_list[0:n]) -- while accounting for nodata.
+
+    """
+    result = numpy.empty(raster_nodata_list[0].shape, dtype=numpy.float32)
+    result[:] = raster_nodata_list[-1]
+    n = len(raster_nodata_list) // 2
+    for index in range(n):
+        valid_mask = ~numpy.isclose(
+            raster_nodata_list[index], raster_nodata_list[index+n])
+        result[valid_mask] += raster_nodata_list[index][valid_mask]
+    return result
 
 
 def dot_prod_op(*raster_nodata_list):
