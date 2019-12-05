@@ -129,7 +129,7 @@ FERT_USAGE_DIR = os.path.join(
     ECOSHARD_DIR, 'Fertilizer2000toMarijn_geotiff')
 
 
-def calculate_for_landcover(task_graph, landcover_path):
+def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     """Calculate values for a given landcover.
 
     Parameters:
@@ -137,6 +137,8 @@ def calculate_for_landcover(task_graph, landcover_path):
             work.
         landcover_path (str): path to a landcover map with globio style
             landcover codes.
+        valid_crop_set (set): set of Monfreda style crop ids that are the only
+            crops that should be processed.
 
     Returns:
         None.
@@ -171,6 +173,7 @@ def calculate_for_landcover(task_graph, landcover_path):
     value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
+             valid_crop_set,
              CROP_NUTRIENT_TABLE_PATH,
              # the `False` indicates "do not consider pollination"
              YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, False, landcover_path,
@@ -197,6 +200,7 @@ def calculate_for_landcover(task_graph, landcover_path):
     prod_dep_value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
+             valid_crop_set,
              CROP_NUTRIENT_TABLE_PATH,
              # the `True` indicates "consider pollination"
              YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, True, landcover_path,
@@ -236,6 +240,7 @@ def calculate_for_landcover(task_graph, landcover_path):
         prod_total_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
             args=(
+                 valid_crop_set,
                  CROP_NUTRIENT_TABLE_PATH, nutrient_name,
                  YIELD_AND_HAREA_RASTER_DIR, False, landcover_path,
                  yield_total_nut_10km_path, yield_total_nut_10s_path,
@@ -263,6 +268,7 @@ def calculate_for_landcover(task_graph, landcover_path):
         pol_dep_prod_task = task_graph.add_task(
             func=create_prod_nutrient_raster,
             args=(
+                valid_crop_set,
                 CROP_NUTRIENT_TABLE_PATH, nutrient_name,
                 YIELD_AND_HAREA_RASTER_DIR, True, landcover_path,
                 poll_dep_yield_nut_10km_path, poll_dep_yield_nut_10s_path,
@@ -1111,6 +1117,7 @@ def density_to_value_op(density_array, area_array, density_nodata):
 
 
 def create_value_rasters(
+        valid_crop_set,
         crop_pol_dep_refuse_df_path, yield_and_harea_raster_dir,
         price_raster_dir, consider_pollination, sample_target_raster_path,
         target_10km_value_yield_path, target_10s_value_yield_path,
@@ -1118,6 +1125,8 @@ def create_value_rasters(
     """Create an dollar value yield and total value raster for all crops.
 
     Parameters:
+        valid_crop_set (set): set of Monfreda style crop ids that are the only
+            crops that should be processed in this function.
         crop_pol_dep_refuse_df_path (str): path to CSV with at least the
             columns `filenm`, `Pollination dependence`, and `Percent refuse`.
         yield_and_harea_raster_dir (str): path to a directory that has files
@@ -1159,6 +1168,8 @@ def create_value_rasters(
     pollination_yield_factor_list = []
     for _, row in crop_pol_dep_refuse_df.iterrows():
         crop_id = row['filenm']
+        if crop_id not in valid_crop_set:
+            continue
         percent_refuse = row['Percent refuse']
         pol_dep_prop = row['Pollination dependence']
         yield_raster_path = os.path.join(
@@ -1225,13 +1236,16 @@ def create_value_rasters(
 
 
 def create_prod_nutrient_raster(
-        crop_nutrient_df_path, nutrient_name, yield_and_harea_raster_dir,
+        valid_crop_set, crop_nutrient_df_path, nutrient_name,
+        yield_and_harea_raster_dir,
         consider_pollination, sample_target_raster_path,
         target_10km_yield_path, target_10s_yield_path,
         target_10s_production_path):
     """Create total production & yield for a nutrient for all crops.
 
     Parameters:
+        valid_crop_set (set): set of Monfreda style crop ids that are the only
+            crops to process in this function.
         crop_nutrient_df_path (str): path to CSV with at least the
             column `filenm`, `nutrient_name`, `Percent refuse crop`, and
             `Pollination dependence crop`.
@@ -1274,10 +1288,13 @@ def create_prod_nutrient_raster(
     harea_raster_path_list = []
     pollination_nutrient_yield_factor_list = []
     for _, row in crop_nutrient_df.iterrows():
+        crop_id = row['filenm']
+        if crop_id not in valid_crop_set:
+            continue
         yield_raster_path = os.path.join(
-            yield_and_harea_raster_dir, f"{row['filenm']}_yield.tif")
+            yield_and_harea_raster_dir, f"{crop_id}_yield.tif")
         harea_raster_path = os.path.join(
-            yield_and_harea_raster_dir, f"{row['filenm']}_harea.tif")
+            yield_and_harea_raster_dir, f"{crop_id}_harea.tif")
         if os.path.exists(yield_raster_path):
             yield_raster_path_list.append(yield_raster_path)
             harea_raster_path_list.append(harea_raster_path)
@@ -1650,6 +1667,7 @@ def fractional_add_op(base_array, new_array, frac_val, nodata):
 
 
 def calculate_global_costs(
+        valid_crop_set,
         ag_costs_table_path,
         prices_by_crop_and_country_table_path,
         country_region_iso_table_path,
@@ -1663,6 +1681,8 @@ def calculate_global_costs(
     """Parse a global crop prices and ag cost table into per-country prices.
 
     Parameters:
+        valid_crop_set (set): set of Monfreda style crop ids that are the only
+            crops to process in this function.
         ag_costs_table_path (str): path to a CSV that has
             'group', 'group_name', 'item', 'avg_N', 'avg_P', 'avg_K',
             'laborcost', 'actual_mach',  'low_mach',  and 'low_seed'.
@@ -1753,6 +1773,9 @@ def calculate_global_costs(
         region = iso_to_region_map[iso_name]
         iso_name_set.add(iso_name)
         crop_name = str(y[5])
+        # only process crops that are specified in input
+        if crop_name not in valid_crop_set:
+            continue
         prices = (y[27:31]).dropna()
         if prices.size > 0:
             price = float(prices.tail(1))
@@ -1880,12 +1903,14 @@ def calculate_global_average(
                         iso_code, crop_name, avg_cost))
 
 
-def download_and_preprocess_data(task_graph):
+def download_and_preprocess_data(task_graph, valid_crop_set):
     """Download all ecoshards and create base tables.
 
     Parameter:
         task_graph (taskgraph.TaskGraph): taskgraph object for scheduling,
             will use to block this function until complete.
+        valid_crop_set (set): set of Monfreda style crop ids. These are the
+            only crops that will be processed in this function.
 
     Returns:
         None.
@@ -1952,6 +1977,7 @@ def download_and_preprocess_data(task_graph):
     calc_global_costs_task = task_graph.add_task(
         func=calculate_global_costs,
         args=(
+            valid_crop_set,
             ag_costs_table_path,
             prices_by_crop_and_country_table_path,
             COUNTRY_REGION_ISO_TABLE_PATH,
@@ -2013,6 +2039,9 @@ def download_and_preprocess_data(task_graph):
             FERT_USAGE_DIR, '*K2Oapprate.tif')):
         crop_name = re.match(
             '([^_]+)K2Oapprate\.tif', os.path.basename(k_app_rate_path))[1]
+        # only process crops specified in the input
+        if crop_name not in valid_crop_set:
+            continue
         yield_raster_path = os.path.join(
             YIELD_AND_HAREA_RASTER_DIR, '%s_yield.tif' % crop_name)
         p_app_rate_path = os.path.join(
@@ -2148,6 +2177,25 @@ def dot_prod_op(*raster_nodata_list):
     return result
 
 
+def calculate_valid_crop_set():
+    """Return a set of monfreda style cropname that are valid."""
+    # use this to get a set of known crop ids
+    crop_nutrient_df = pandas.read_csv(CROP_NUTRIENT_TABLE_PATH)
+    crop_nutrient_id_set = set()
+    for _, row in crop_nutrient_df.iterrows():
+        crop_nutrient_id_set.add(row['filenm'])
+
+    # use this to determine which fert app rates are known
+    fert_rate_crop_id_set = set()
+    for k_app_rate_path in glob.glob(os.path.join(
+            FERT_USAGE_DIR, '*K2Oapprate.tif')):
+        crop_name = re.match(
+            '([^_]+)K2Oapprate\.tif', os.path.basename(k_app_rate_path))[1]
+        fert_rate_crop_id_set.add(crop_name)
+
+    return crop_nutrient_id_set & fert_rate_crop_id_set
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='NCI Pollination Analysis')
     parser.add_argument(
@@ -2168,15 +2216,18 @@ if __name__ == '__main__':
             landcover_raster_list.append(raster_path)
 
     task_graph = taskgraph.TaskGraph(
-        CHURN_DIR, N_WORKERS, reporting_interval=5.0)
+        WORKING_DIR, N_WORKERS, reporting_interval=5.0)
     LOGGER.info("download data and preprocess")
     for dir_path in [ECOSHARD_DIR, CHURN_DIR]:
         try:
             os.makedirs(dir_path)
         except OSError:
             pass
-    download_and_preprocess_data(task_graph)
-    sys.exit()
+
+    valid_crop_set = calculate_valid_crop_set()
+
+    download_and_preprocess_data(task_graph, valid_crop_set)
+    task_graph.join()
     for landcover_path in landcover_raster_list:
         LOGGER.info("process landcover map: %s", landcover_path)
         calculate_for_landcover(task_graph, landcover_path)
