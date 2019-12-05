@@ -2085,7 +2085,8 @@ def download_and_preprocess_data(task_graph):
         total_cost_raster_task = task_graph.add_task(
             func=pygeoprocessing.raster_calculator,
             args=(
-                cost_raster_path_band_list + nodata_list + [(_MULT_NODATA, 'raw')],
+                cost_raster_path_band_list + nodata_list +
+                [(_MULT_NODATA, 'raw')],
                 sum_rasters_op,
                 total_cost_path,
                 gdal.GDT_Float32,
@@ -2093,7 +2094,6 @@ def download_and_preprocess_data(task_graph):
             dependent_task_list=price_raster_task_list + [fert_cost_task],
             target_path_list=[total_cost_path],
             task_name='total cost for %s' % crop_name)
-        total_cost_raster_task.join()
         break
     # need to download everything before we can iterate through it
     task_graph.join()
