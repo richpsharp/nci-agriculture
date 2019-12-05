@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = max(1, multiprocessing.cpu_count())
+N_WORKERS = 0  # max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -176,9 +176,9 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
              valid_crop_set,
              CROP_NUTRIENT_TABLE_PATH,
              # the `False` indicates "do not consider pollination"
-             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, False, landcover_path,
-             target_10km_value_yield_path, target_10s_value_yield_path,
-             target_10s_value_path),
+             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, CROP_COSTS_DIR,
+             False, landcover_path, target_10km_value_yield_path,
+             target_10s_value_yield_path, target_10s_value_path),
         target_path_list=[
             target_10km_value_yield_path, target_10s_value_yield_path,
             target_10s_value_path],
@@ -203,7 +203,8 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
              valid_crop_set,
              CROP_NUTRIENT_TABLE_PATH,
              # the `True` indicates "consider pollination"
-             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, True, landcover_path,
+             YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, CROP_COSTS_DIR, True,
+             landcover_path,
              target_10km_prod_dep_value_yield_path,
              target_10s_prod_dep_value_yield_path,
              target_10s_prod_dep_value_path),
@@ -1119,8 +1120,9 @@ def density_to_value_op(density_array, area_array, density_nodata):
 def create_value_rasters(
         valid_crop_set,
         crop_pol_dep_refuse_df_path, yield_and_harea_raster_dir,
-        price_raster_dir, consider_pollination, sample_target_raster_path,
-        target_10km_value_yield_path, target_10s_value_yield_path,
+        price_raster_dir, cost_raster_dir, consider_pollination,
+        sample_target_raster_path, target_10km_value_yield_path,
+        target_10s_value_yield_path,
         target_10s_value_path):
     """Create an dollar value yield and total value raster for all crops.
 
@@ -1134,7 +1136,9 @@ def create_value_rasters(
             `[crop_name]_harea.tif` where `crop_name` is a value
             in the `filenm` column of `crop_nutrient_df`.
         price_raster_dir (str): path to a directory containing files of the
-            form form '[crop name]_price.tif'
+            form '[crop name]_price.tif' with units in $/ha.
+        cost_raster_dir (str): path to a directory containing files of the form
+            '[crop_id]_total_cost.tif'. These are in $/ha.
         consider_pollination (bool): if True, multiply yields by pollinator
             dependence ratio.
         sample_target_raster_path (path): path to a file that has the raster
@@ -2225,9 +2229,9 @@ if __name__ == '__main__':
             pass
 
     valid_crop_set = calculate_valid_crop_set()
-
+    valid_crop_set = set(['almond'])
     download_and_preprocess_data(task_graph, valid_crop_set)
     task_graph.join()
     for landcover_path in landcover_raster_list:
         LOGGER.info("process landcover map: %s", landcover_path)
-        calculate_for_landcover(task_graph, landcover_path)
+        calculate_for_landcover(task_graph, landcover_path, valid_crop_set)
