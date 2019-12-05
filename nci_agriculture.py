@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = -1  # max(1, multiprocessing.cpu_count())
+N_WORKERS = max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -180,6 +180,9 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     target_10s_cost_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_cost_rasters',
         f'monfreda_2008_cost_total_10s_%s.tif' % landcover_key)
+    target_10s_harea_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_harea_total_rasters',
+        f'monfreda_2008_harea_total_%s.tif' % landcover_key)
 
     value_total_task = task_graph.add_task(
         func=create_value_rasters,
@@ -192,40 +195,47 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
              target_10s_value_yield_path, target_10s_value_path,
              target_10km_cost_yield_path,
              target_10s_cost_yield_path,
-             target_10s_cost_path),
+             target_10s_cost_path,
+             target_10s_harea_path),
         target_path_list=[
             target_10km_value_yield_path, target_10s_value_yield_path,
             target_10s_value_path,
             target_10km_cost_yield_path,
             target_10s_cost_yield_path,
-            target_10s_cost_path],
+            target_10s_cost_path,
+            target_10s_harea_path],
         task_name=f"""create prod raster {
             os.path.basename(target_10s_value_path)}""")
     value_total_task.join()
 
     # do poll dep value
-    target_10km_prod_dep_value_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
-        f'monfreda_2008_prod_dep_value_yield_total_10km_%s.tif' %
+    target_10km_poll_dep_value_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_value_yield_rasters',
+        f'monfreda_2008_poll_dep_value_yield_total_10km_%s.tif' %
         landcover_key)
-    target_10s_prod_dep_value_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_value_yield_rasters',
-        f'monfreda_2008_prod_dep_value_yield_total_10s_%s.tif' % landcover_key)
-    target_10s_prod_dep_value_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_value_rasters',
-        f'monfreda_2008_prod_dep_value_total_10s_%s.tif' % landcover_key)
+    target_10s_poll_dep_value_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_value_yield_rasters',
+        f'monfreda_2008_poll_dep_value_yield_total_10s_%s.tif' % landcover_key)
+    target_10s_poll_dep_value_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_value_rasters',
+        f'monfreda_2008_poll_dep_value_total_10s_%s.tif' % landcover_key)
 
-    target_10km_prod_dep_cost_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_cost_yield_rasters',
-        f'monfreda_2008_prod_dep_cost_yield_total_10km_%s.tif' %
+    target_10km_poll_dep_cost_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_cost_yield_rasters',
+        f'monfreda_2008_poll_dep_cost_yield_total_10km_%s.tif' %
         landcover_key)
-    target_10s_prod_dep_cost_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_cost_yield_rasters',
-        f'monfreda_2008_prod_dep_cost_yield_total_10s_%s.tif' % landcover_key)
-    target_10s_prod_dep_cost_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_prod_dep_cost_rasters',
-        f'monfreda_2008_prod_dep_cost_total_10s_%s.tif' % landcover_key)
-    prod_dep_value_total_task = task_graph.add_task(
+    target_10s_poll_dep_cost_yield_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_cost_yield_rasters',
+        f'monfreda_2008_poll_dep_cost_yield_total_10s_%s.tif' % landcover_key)
+    target_10s_poll_dep_cost_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_poll_dep_cost_rasters',
+        f'monfreda_2008_poll_dep_cost_total_10s_%s.tif' % landcover_key)
+    target_10s_pol_harea_path = os.path.join(
+        CHURN_DIR, 'monfreda_2008_harea_total_rasters',
+        f'monfreda_2008_pol_harea_total_%s.tif' % landcover_key)
+
+
+    poll_dep_value_total_task = task_graph.add_task(
         func=create_value_rasters,
         args=(
              valid_crop_set,
@@ -233,21 +243,23 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
              # the `True` indicates "consider pollination"
              YIELD_AND_HAREA_RASTER_DIR, CROP_PRICE_DIR, CROP_COSTS_DIR, True,
              landcover_path,
-             target_10km_prod_dep_value_yield_path,
-             target_10s_prod_dep_value_yield_path,
-             target_10s_prod_dep_value_path,
-             target_10km_prod_dep_cost_yield_path,
-             target_10s_prod_dep_cost_yield_path,
-             target_10s_prod_dep_cost_path),
+             target_10km_poll_dep_value_yield_path,
+             target_10s_poll_dep_value_yield_path,
+             target_10s_poll_dep_value_path,
+             target_10km_poll_dep_cost_yield_path,
+             target_10s_poll_dep_cost_yield_path,
+             target_10s_poll_dep_cost_path,
+             target_10s_harea_path),
         target_path_list=[
-            target_10km_prod_dep_value_yield_path,
-            target_10s_prod_dep_value_yield_path,
-            target_10s_prod_dep_value_path,
-            target_10km_prod_dep_cost_yield_path,
-            target_10s_prod_dep_cost_yield_path,
-            target_10s_prod_dep_cost_path],
+            target_10km_poll_dep_value_yield_path,
+            target_10s_poll_dep_value_yield_path,
+            target_10s_poll_dep_value_path,
+            target_10km_poll_dep_cost_yield_path,
+            target_10s_poll_dep_cost_yield_path,
+            target_10s_poll_dep_cost_path,
+            target_10s_harea_path],
         task_name=f"""create prod dep value raster {
-            os.path.basename(target_10s_prod_dep_value_path)}""")
+            os.path.basename(target_10s_poll_dep_value_path)}""")
 
     # 1.2.3.  Crop production
 
@@ -582,11 +594,11 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     value_poll_dep_potential_scenario_task = task_graph.add_task(
         func=mult_rasters,
         args=(
-            mask_task_path_map['ag'][1], target_10s_prod_dep_value_path,
+            mask_task_path_map['ag'][1], target_10s_poll_dep_value_path,
             value_poll_dep_potential_scenario_path),
         target_path_list=[value_poll_dep_potential_scenario_path],
         dependent_task_list=[
-            prod_dep_value_total_task, mask_task_path_map['ag'][0]],
+            poll_dep_value_total_task, mask_task_path_map['ag'][0]],
         task_name=(
             f'value_dep_prod_10s_{landcover_key}'))
 
@@ -1122,7 +1134,8 @@ def total_price_yield_op(
         crop_array = crop_yield_harea_price_array_list[crop_index]
         harea_array = crop_yield_harea_price_array_list[crop_index + n_crops]
         price_array = crop_yield_harea_price_array_list[crop_index + 2*n_crops]
-        valid_mask = crop_array != yield_nodata
+        valid_mask = (
+            (crop_array != yield_nodata) & (price_array != _MULT_NODATA))
         all_valid |= valid_mask
         result[valid_mask] += (
             crop_array[valid_mask] * harea_array[valid_mask] *
@@ -1159,7 +1172,8 @@ def create_value_rasters(
         target_10s_value_path,
         target_10km_cost_yield_path,
         target_10s_cost_yield_path,
-        target_10s_cost_path):
+        target_10s_cost_path,
+        target_total_harea_path):
     """Create an dollar value yield and total value raster for all crops.
 
     Parameters:
@@ -1196,6 +1210,8 @@ def create_value_rasters(
         target_10s_cost_path (str): path to target raster that will
             contain a dollar amount of the total dollar cost of crops per
             pixel.
+        target_total_harea_path (str): path to total harvested area proportion for
+            `valid_crop_set`.
 
     Returns:
         None.
@@ -1260,6 +1276,13 @@ def create_value_rasters(
         [(x, 1) for x in yield_raster_path_list + harea_raster_path_list +
          cost_raster_path_list], total_price_yield_op,
         target_10km_cost_yield_path, gdal.GDT_Float32, yield_nodata)
+
+    pygeoprocessing.raster_calculator(
+        [(x, 1) for x in harea_raster_path_list] +
+        [(-9999, 'raw') for _ in harea_raster_path_list] +
+        [(_MULT_NODATA, 'raw')],
+        sum_rasters_op,
+        target_total_harea_path, gdal.GDT_Float32, _MULT_NODATA)
 
     y_lat_array = numpy.linspace(
         sample_target_raster_info['geotransform'][3],
@@ -1684,7 +1707,7 @@ def cost_table_to_raster(
     LOGGER.debug(
         'starting rasterization of %s', target_cost_raster_path)
     country_cost_df = pandas.read_csv(cost_table_path)
-    country_crop_cost_map = {
+    iso_crop_cost_map = {
         (x[1][0], x[1][1]): float(x[1][2])
         for x in country_cost_df.iterrows()
     }
@@ -1705,13 +1728,13 @@ def cost_table_to_raster(
     # add polygons to subset_layer
     price_layer.StartTransaction()
     for country_feature in country_layer:
-        country_name = country_feature.GetField('ISO3')
-        if (country_name, crop_name) in country_crop_cost_map:
+        iso_name = country_feature.GetField('ISO3')
+        if (iso_name, crop_name) in iso_crop_cost_map:
             country_geom = country_feature.GetGeometryRef()
             new_feature = ogr.Feature(price_layer_defn)
             new_feature.SetGeometry(country_geom.Clone())
             new_feature.SetField(
-                'price', country_crop_cost_map[(country_name, crop_name)])
+                'price', iso_crop_cost_map[(iso_name, crop_name)])
             price_layer.CreateFeature(new_feature)
     price_layer.CommitTransaction()
 
@@ -2092,13 +2115,16 @@ def download_and_preprocess_data(task_graph, valid_crop_set):
         fert_cost_raster_path = os.path.join(
             CROP_COSTS_WORKING_DIR, 'global_%s.tif' % (fert_type,))
         fert_cost_raster_path_map[fert_type] = fert_cost_raster_path
+        # pick any crop that's valid because fert costs are all the same per
+        # crop
+        valid_crop_id = next(iter(valid_crop_set))
         price_raster_task = task_graph.add_task(
             func=cost_table_to_raster,
             args=(
                 # yield_raster_path is only used as a base raster for getting
                 # the shape & size consisten
                 base_abaca_raster_path, COUNTRY_ISO_GPKG_PATH,
-                fert_table_path, 'abaca',  # pick abaca since one-shot global
+                fert_table_path, valid_crop_id,
                 fert_cost_raster_path),
             ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
             target_path_list=[fert_cost_raster_path],
@@ -2211,13 +2237,15 @@ def sum_rasters_op(*raster_nodata_list):
         sum(raster_nodata_list[0:n]) -- while accounting for nodata.
 
     """
-    result = numpy.empty(raster_nodata_list[0].shape, dtype=numpy.float32)
-    result[:] = raster_nodata_list[_MULT_NODATA]
+    result = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.float32)
+    nodata_mask = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.bool)
     n = len(raster_nodata_list) // 2
     for index in range(n):
         valid_mask = ~numpy.isclose(
             raster_nodata_list[index], raster_nodata_list[index+n])
+        nodata_mask |= ~valid_mask
         result[valid_mask] += raster_nodata_list[index][valid_mask]
+    result[nodata_mask] = raster_nodata_list[-1]
     return result
 
 
@@ -2243,7 +2271,7 @@ def dot_prod_op(*raster_nodata_list):
         result[~nodata_mask] += (
             raster_nodata_list[index][~nodata_mask] *
             raster_nodata_list[index+n_elements][~nodata_mask])
-    result[nodata_mask] = raster_nodata_list[_MULT_NODATA]
+    result[nodata_mask] = raster_nodata_list[-1]
     return result
 
 
