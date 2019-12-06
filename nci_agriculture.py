@@ -2431,7 +2431,6 @@ if __name__ == '__main__':
             pass
 
     valid_crop_set = calculate_valid_crop_set()
-    valid_crop_set = set(['almond'])
     download_and_preprocess_data(task_graph, valid_crop_set)
     task_graph.join()
     for landcover_path in landcover_raster_list:
