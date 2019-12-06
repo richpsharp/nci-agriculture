@@ -91,6 +91,9 @@ CROP_NUTRIENT_URL = (
 FERT_USAGE_RASTERS_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'Fertilizer2000toMarijn_geotiff_md5_2bcd8efada8228f2b90e1491abf96645.zip')
+CBI_MOD_YIELD_TABLES_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'cbi_mod_yield_md5_c682def6487414656d4dc76675f2920a.zip')
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -110,6 +113,8 @@ PER_COUNTRY_PRICE_SCALE_FACTOR_TABLE_PATH = os.path.join(
     CHURN_DIR, 'per_country_price_scale_factor.csv')
 COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
+CBI_MOD_YIELD_TABLES_DIR = os.path.join(
+    ECOSHARD_DIR, 'cbi_mod_yield_tables')
 COUNTRY_REGION_ISO_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(COUNTRY_REGION_ISO_TABLE_URL))
 COUNTRY_ISO_GPKG_PATH = os.path.join(
@@ -1975,7 +1980,6 @@ def calculate_global_costs(
         if crop_name not in valid_crop_set:
             continue
         prices = (y[27:31]).dropna()
-        LOGGER.debug(crop_name)
         if prices.size > 0:
             price = float(prices.tail(1))
             country_to_crop_price_map[iso_name][crop_name] = price
@@ -2146,6 +2150,15 @@ def download_and_preprocess_data(task_graph, valid_crop_set):
               fert_usage_touch_file_path),
         target_path_list=[fert_usage_touch_file_path],
         task_name='download and unzip fertilizer')
+
+    cbi_mod_yield_touch_file_path = os.path.join(
+        ECOSHARD_DIR, 'cbi_mod_yield_tables.COMPLETE')
+    cbi_mod_yield_dl_zip_task = task_graph.add_task(
+        func=download_and_unzip,
+        args=(CBI_MOD_YIELD_TABLES_URL, CBI_MOD_YIELD_TABLES_DIR,
+              cbi_mod_yield_touch_file_path),
+        target_path_list=[cbi_mod_yield_touch_file_path],
+        task_name='download and unzip cbi mod yield')
 
     ag_costs_table_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
@@ -2411,7 +2424,6 @@ def calculate_valid_crop_set():
         PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH)
     price_crop_id_set = set(crop_prices_by_country_df[
         'earthstat_filename_prefix'].unique())
-    LOGGER.debug(price_crop_id_set)
     return (
         crop_nutrient_id_set & fert_rate_crop_id_set & monfreda_crop_id_set &
         price_crop_id_set)
@@ -2439,7 +2451,7 @@ if __name__ == '__main__':
     task_graph = taskgraph.TaskGraph(
         WORKING_DIR, N_WORKERS, reporting_interval=5.0)
     LOGGER.info("download data and preprocess")
-    for dir_path in [ECOSHARD_DIR, CHURN_DIR]:
+    for dir_path in [ECOSHARD_DIR, CHURN_DIR, CBI_MOD_YIELD_TABLES_DIR]:
         try:
             os.makedirs(dir_path)
         except OSError:
