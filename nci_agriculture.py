@@ -1975,6 +1975,7 @@ def calculate_global_costs(
         if crop_name not in valid_crop_set:
             continue
         prices = (y[27:31]).dropna()
+        LOGGER.debug(crop_name)
         if prices.size > 0:
             price = float(prices.tail(1))
             country_to_crop_price_map[iso_name][crop_name] = price
@@ -2399,7 +2400,21 @@ def calculate_valid_crop_set():
             '([^_]+)K2Oapprate\.tif', os.path.basename(k_app_rate_path))[1]
         fert_rate_crop_id_set.add(crop_name)
 
-    return crop_nutrient_id_set & fert_rate_crop_id_set
+    monfreda_crop_id_set = set()
+    for yield_path in glob.glob(os.path.join(
+            YIELD_AND_HAREA_RASTER_DIR, '*_yield.tif')):
+        crop_name = re.match(
+            '([^_]+)_yield\.tif', os.path.basename(yield_path))[1]
+        monfreda_crop_id_set.add(crop_name)
+
+    crop_prices_by_country_df = pandas.read_csv(
+        PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH)
+    price_crop_id_set = set(crop_prices_by_country_df[
+        'earthstat_filename_prefix'].unique())
+    LOGGER.debug(price_crop_id_set)
+    return (
+        crop_nutrient_id_set & fert_rate_crop_id_set & monfreda_crop_id_set &
+        price_crop_id_set)
 
 
 if __name__ == '__main__':
@@ -2431,7 +2446,7 @@ if __name__ == '__main__':
             pass
 
     valid_crop_set = calculate_valid_crop_set()
-    download_and_preprocess_data(task_graph, valid_crop_set)
+    LOGGER.debug('\n'.join(sorted(valid_crop_set)))
     task_graph.join()
     for landcover_path in landcover_raster_list:
         LOGGER.info("process landcover map: %s", landcover_path)
