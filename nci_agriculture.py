@@ -94,6 +94,10 @@ FERT_USAGE_RASTERS_URL = (
 CBI_MOD_YIELD_TABLES_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
     'cbi_mod_yield_md5_c682def6487414656d4dc76675f2920a.zip')
+EXTENDED_CLIMATE_BIN_RASTERS_URL = (
+    'https://storage.googleapis.com/nci-ecoshards/'
+    'extended_climate_bin_maps_for_11_crops_'
+    'md5_a44d69867c39a109e21627bb71d118cc.zip')
 
 ADJUSTED_GLOBAL_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'adjusted_global_price_map.csv')
@@ -115,6 +119,8 @@ COUNTRY_CROP_PRICE_TABLE_PATH = os.path.join(
     CHURN_DIR, 'country_crop_price_table.csv')
 CBI_MOD_YIELD_TABLES_DIR = os.path.join(
     ECOSHARD_DIR, 'cbi_mod_yield_tables')
+CBI_MOD_YIELD_RASTERS_DIR = os.path.join(
+    CHURN_DIR, 'cbi_mod_yield_rasters')
 COUNTRY_REGION_ISO_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(COUNTRY_REGION_ISO_TABLE_URL))
 COUNTRY_ISO_GPKG_PATH = os.path.join(
@@ -2451,7 +2457,9 @@ if __name__ == '__main__':
     task_graph = taskgraph.TaskGraph(
         WORKING_DIR, N_WORKERS, reporting_interval=5.0)
     LOGGER.info("download data and preprocess")
-    for dir_path in [ECOSHARD_DIR, CHURN_DIR, CBI_MOD_YIELD_TABLES_DIR]:
+    for dir_path in [
+            ECOSHARD_DIR, CHURN_DIR, CBI_MOD_YIELD_TABLES_DIR,
+            CBI_MOD_YIELD_RASTERS_DIR]:
         try:
             os.makedirs(dir_path)
         except OSError:
