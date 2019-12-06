@@ -129,6 +129,8 @@ CROP_NUTRIENT_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(CROP_NUTRIENT_URL))
 PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH = os.path.join(
     ECOSHARD_DIR, os.path.basename(PRICES_BY_CROP_AND_COUNTRY_TABLE_URL))
+AG_COSTS_TABLE_PATH = os.path.join(
+    ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
 YIELD_AND_HAREA_RASTER_DIR = os.path.join(
     ECOSHARD_DIR, 'monfreda_2008_observed_yield_and_harea')
 FERT_APP_RATE_DIR = os.path.join(
@@ -2112,19 +2114,8 @@ def calculate_global_average(
                         iso_code, crop_name, avg_cost))
 
 
-def download_and_preprocess_data(task_graph, valid_crop_set):
-    """Download all ecoshards and create base tables.
-
-    Parameter:
-        task_graph (taskgraph.TaskGraph): taskgraph object for scheduling,
-            will use to block this function until complete.
-        valid_crop_set (set): set of Monfreda style crop ids. These are the
-            only crops that will be processed in this function.
-
-    Returns:
-        None.
-
-    """
+def download_data(task_graph):
+    """Download data required for analysis."""
     crop_nutrient_table_fetch_task = task_graph.add_task(
         func=ecoshard.download_url,
         args=(
@@ -2166,12 +2157,10 @@ def download_and_preprocess_data(task_graph, valid_crop_set):
         target_path_list=[cbi_mod_yield_touch_file_path],
         task_name='download and unzip cbi mod yield')
 
-    ag_costs_table_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(AG_COST_TABLE_URL))
     ag_cost_table_task = task_graph.add_task(
         func=ecoshard.download_url,
-        args=(AG_COST_TABLE_URL, ag_costs_table_path),
-        target_path_list=[ag_costs_table_path],
+        args=(AG_COST_TABLE_URL, AG_COSTS_TABLE_PATH),
+        target_path_list=[AG_COSTS_TABLE_PATH],
         task_name='download ag cost table')
 
     prices_by_crop_and_country_table_path = os.path.join(
@@ -2191,13 +2180,28 @@ def download_and_preprocess_data(task_graph, valid_crop_set):
         args=(COUNTRY_ISO_GPKG_URL, country_iso_gpkg_path),
         target_path_list=[country_iso_gpkg_path],
         task_name='download country iso gpkg')
+    task_graph.join()
 
+
+def preprocess_data(task_graph, valid_crop_set):
+    """Download all ecoshards and create base tables.
+
+    Parameter:
+        task_graph (taskgraph.TaskGraph): taskgraph object for scheduling,
+            will use to block this function until complete.
+        valid_crop_set (set): set of Monfreda style crop ids. These are the
+            only crops that will be processed in this function.
+
+    Returns:
+        None.
+
+    """
     calc_global_costs_task = task_graph.add_task(
         func=calculate_global_costs,
         args=(
             valid_crop_set,
-            ag_costs_table_path,
-            prices_by_crop_and_country_table_path,
+            AG_COSTS_TABLE_PATH,
+            PRICES_BY_CROP_AND_COUNTRY_TABLE_PATH,
             COUNTRY_REGION_ISO_TABLE_PATH,
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
@@ -2214,8 +2218,6 @@ def download_and_preprocess_data(task_graph, valid_crop_set):
             AVG_GLOBAL_P_COST_TABLE_PATH,
             AVG_GLOBAL_K_COST_TABLE_PATH,
             COUNTRY_CROP_PRICE_TABLE_PATH],
-        dependent_task_list=[
-            ag_cost_table_task, country_iso_gpkg_task],
         task_name='calc global costs')
     calc_global_costs_task.join()
 
@@ -2465,8 +2467,9 @@ if __name__ == '__main__':
         except OSError:
             pass
 
+    download_data(task_graph)
     valid_crop_set = calculate_valid_crop_set()
-    download_and_preprocess_data(task_graph, valid_crop_set)
+    preprocess_data(task_graph, valid_crop_set)
     task_graph.join()
     for landcover_path in landcover_raster_list:
         LOGGER.info("process landcover map: %s", landcover_path)
