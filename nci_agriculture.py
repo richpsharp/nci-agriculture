@@ -2446,7 +2446,7 @@ if __name__ == '__main__':
             pass
 
     valid_crop_set = calculate_valid_crop_set()
-    LOGGER.debug('\n'.join(sorted(valid_crop_set)))
+    download_and_preprocess_data(task_graph, valid_crop_set)
     task_graph.join()
     for landcover_path in landcover_raster_list:
         LOGGER.info("process landcover map: %s", landcover_path)
