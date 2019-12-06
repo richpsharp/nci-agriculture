@@ -66,7 +66,7 @@ ECOSHARD_DIR = os.path.join(WORKING_DIR, 'ecoshard_dir')
 CHURN_DIR = os.path.join(WORKING_DIR, 'churn')
 
 NODATA = -9999
-N_WORKERS = max(1, multiprocessing.cpu_count())
+N_WORKERS = -1  # max(1, multiprocessing.cpu_count())
 
 COUNTRY_ISO_GPKG_URL = (
     'https://storage.googleapis.com/nci-ecoshards/'
@@ -1227,6 +1227,7 @@ def total_cost_yield_op(
         cost_array = crop_yield_harea_cost_array_list[crop_index + n_crops]
         valid_mask = (
             (cost_array != _MULT_NODATA) & (harea_array != _MULT_NODATA))
+        LOGGER.debug(valid_mask)
         all_valid |= valid_mask
         result[valid_mask] += (
             harea_array[valid_mask] *
@@ -1377,6 +1378,11 @@ def create_value_rasters(
         [(x, 1) for x in harea_raster_path_list +
          cost_raster_path_list], total_cost_yield_op,
         target_10km_cost_yield_path, gdal.GDT_Float32, yield_nodata)
+
+    LOGGER.debug(
+        '%s %s', pollination_yield_factor_list, target_10km_value_yield_path)
+    sys.exit()
+
 
     subtract_2_rasters(
         target_10km_value_yield_path, target_10km_cost_yield_path,
@@ -2218,6 +2224,7 @@ def preprocess_data(task_graph, valid_crop_set):
             AVG_GLOBAL_P_COST_TABLE_PATH,
             AVG_GLOBAL_K_COST_TABLE_PATH,
             COUNTRY_CROP_PRICE_TABLE_PATH],
+        hash_algorithm='md5',
         task_name='calc global costs')
     calc_global_costs_task.join()
 
@@ -2253,6 +2260,7 @@ def preprocess_data(task_graph, valid_crop_set):
                 fert_table_path, valid_crop_id,
                 fert_cost_raster_path),
             ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
+            hash_algorithm='md5',
             target_path_list=[fert_cost_raster_path],
             task_name='%s %s raster' % ('global', fert_type))
         price_raster_task_list.append(price_raster_task)
@@ -2318,16 +2326,18 @@ def preprocess_data(task_graph, valid_crop_set):
             price_raster_task = task_graph.add_task(
                 func=cost_table_to_raster,
                 args=(
-                    # yield_raster_path is only used as a base raster for
+                    # base_abaca_raster_path is only used as a base raster for
                     # getting the shape & size consisten
-                    yield_raster_path, COUNTRY_ISO_GPKG_PATH,
+                    base_abaca_raster_path, COUNTRY_ISO_GPKG_PATH,
                     cost_table_path, crop_name,
                     cost_raster_path),
                 ignore_path_list=[COUNTRY_ISO_GPKG_PATH],
+                hash_algorithm='md5',
                 target_path_list=[cost_raster_path],
                 task_name='%s %s raster' % (crop_name, cost_id))
             price_raster_task_list.append(price_raster_task)
-
+        task_graph.join()
+        sys.exit()
         total_cost_path = os.path.join(
             CROP_COSTS_DIR, '%s_total_cost.tif' % crop_name)
         cost_raster_path_band_list = [
@@ -2351,7 +2361,7 @@ def preprocess_data(task_graph, valid_crop_set):
             task_name='total cost for %s' % crop_name)
     # need to download everything before we can iterate through it
     task_graph.join()
-
+    sys.exit()
 
 def sum_rasters_op(*raster_nodata_list):
     """Sum all non-nodata values.
@@ -2469,6 +2479,7 @@ if __name__ == '__main__':
 
     download_data(task_graph)
     valid_crop_set = calculate_valid_crop_set()
+    valid_crop_set = set(['almond', 'apple', 'apricot'])
     preprocess_data(task_graph, valid_crop_set)
     task_graph.join()
     for landcover_path in landcover_raster_list:
