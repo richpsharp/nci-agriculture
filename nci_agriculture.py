@@ -1908,7 +1908,6 @@ def calculate_global_costs(
         country_region_iso_table_path,
         avg_global_labor_cost_table_path,
         avg_global_mach_cost_table_path,
-        avg_global_seed_cost_table_path,
         avg_global_n_cost_table_path,
         avg_global_p_cost_table_path,
         avg_global_k_cost_table_path,
@@ -1920,10 +1919,10 @@ def calculate_global_costs(
             crops to process in this function.
         ag_costs_table_path (str): path to a CSV that has
             'group', 'group_name', 'item', 'avg_N', 'avg_P', 'avg_K',
-            'laborcost', 'actual_mach',  'low_mach',  and 'low_seed'.
+            'laborcost', 'actual_mach',  'low_mach'.
             where 'group' and 'group_name' identify the geographic region,
             'item' is the crop name and other headers correspond to fertilizer,
-            labor, machine, and seed prices.
+            labor, and machine prices.
         prices_by_crop_and_country_table_path (str): path to a CSV table with
             headers: 'earthstat_filename_prefix', '2010' to '2014', 'aadm0_a3'.
             This table is used to calculate the per-country price if one exists
@@ -1939,10 +1938,6 @@ def calculate_global_costs(
         avg_global_mach_cost_table_path (str):  create a 2D table whose rows
             (and first column) correspond to crop name and columns correspond
             to geographic regions while values correspond to machinery cost per
-            Ha for that crop.
-        avg_global_seed_cost_table_path (str):  create a 2D table whose rows
-            (and first column) correspond to crop name and columns correspond
-            to geographic regions while values correspond to seed cost per
             Ha for that crop.
         avg_global_n_cost_table_path (str): table with 'iso', 'crop', and
             'N_cost' fields.
@@ -1967,9 +1962,6 @@ def calculate_global_costs(
         ['group', 'item', 'laborcost']].drop_duplicates().dropna(how='any')
     m_per_ha_cost = ag_costs_df[
         ['group', 'item', 'actual_mach']].drop_duplicates().dropna(how='any')
-    s_per_ha_cost = ag_costs_df[
-        ['group', 'item', 'low_seed']].drop_duplicates().dropna(
-            how='any')
     n_per_ha_cost = ag_costs_df[
         ['group', 'item', 'avg_N']].drop_duplicates().dropna(
             how='any')
@@ -2054,11 +2046,6 @@ def calculate_global_costs(
     calculate_global_average(
         region_names, region_to_iso_map, global_crop_price_map.keys(),
         m_per_ha_cost, 'actual_mach', avg_global_mach_cost_table_path,
-        (9999, 5302))
-
-    calculate_global_average(
-        region_names, region_to_iso_map, global_crop_price_map.keys(),
-        s_per_ha_cost, 'low_seed', avg_global_seed_cost_table_path,
         (9999, 5302))
 
     calculate_global_average(
@@ -2229,7 +2216,6 @@ def preprocess_data(task_graph, valid_crop_set):
             COUNTRY_REGION_ISO_TABLE_PATH,
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
-            AVG_GLOBAL_SEED_COST_TABLE_PATH,
             AVG_GLOBAL_N_COST_TABLE_PATH,
             AVG_GLOBAL_P_COST_TABLE_PATH,
             AVG_GLOBAL_K_COST_TABLE_PATH,
@@ -2237,7 +2223,6 @@ def preprocess_data(task_graph, valid_crop_set):
         target_path_list=[
             AVG_GLOBAL_LABOR_COST_TABLE_PATH,
             AVG_GLOBAL_MACH_COST_TABLE_PATH,
-            AVG_GLOBAL_SEED_COST_TABLE_PATH,
             AVG_GLOBAL_N_COST_TABLE_PATH,
             AVG_GLOBAL_P_COST_TABLE_PATH,
             AVG_GLOBAL_K_COST_TABLE_PATH,
@@ -2334,8 +2319,6 @@ def preprocess_data(task_graph, valid_crop_set):
                  AVG_GLOBAL_LABOR_COST_TABLE_PATH),
                 ('actual_mach', CROP_COSTS_WORKING_DIR,
                  AVG_GLOBAL_MACH_COST_TABLE_PATH),
-                ('low_seed', CROP_COSTS_WORKING_DIR,
-                 AVG_GLOBAL_SEED_COST_TABLE_PATH),
                 ('price', CROP_PRICE_DIR,
                  COUNTRY_CROP_PRICE_TABLE_PATH)]:
             cost_raster_path = os.path.join(
@@ -2361,8 +2344,7 @@ def preprocess_data(task_graph, valid_crop_set):
         cost_raster_path_band_list = [
             (total_fert_cost_raster_path, 1),
             (cost_raster_path_map['laborcost'], 1),
-            (cost_raster_path_map['actual_mach'], 1),
-            (cost_raster_path_map['low_seed'], 1)]
+            (cost_raster_path_map['actual_mach'], 1)]
         nodata_list = [
             (_MULT_NODATA, 'raw') for _ in cost_raster_path_band_list]
         total_cost_raster_task = task_graph.add_task(
