@@ -105,8 +105,6 @@ AVG_GLOBAL_LABOR_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_labor_cost.csv')
 AVG_GLOBAL_MACH_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_mach_cost.csv')
-AVG_GLOBAL_SEED_COST_TABLE_PATH = os.path.join(
-    CHURN_DIR, 'global_seed_cost.csv')
 AVG_GLOBAL_N_COST_TABLE_PATH = os.path.join(
     CHURN_DIR, 'global_N_cost.csv')
 AVG_GLOBAL_P_COST_TABLE_PATH = os.path.join(
