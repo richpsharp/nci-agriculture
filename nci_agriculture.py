@@ -851,8 +851,8 @@ def subtract_2_rasters(
         result = numpy.empty(a_array.shape, dtype=numpy.float32)
         result[:] = target_nodata
         valid_mask = (
-            (a_array != a_nodata) &
-            (b_array != b_nodata))
+            ~numpy.isclose(a_array, a_nodata) &
+            ~numpy.isclose(b_array, b_nodata))
         result[valid_mask] = (
             a_array[valid_mask] - b_array[valid_mask])
         return result
@@ -1416,6 +1416,7 @@ def create_value_rasters(
             'target_bb': sample_target_raster_info['bounding_box'],
             'n_threads': 2,
             },
+        dependent_task_list=[cost_yield_10km_task],
         target_path_list=[target_10s_cost_yield_path])
 
     profit_10s_yield_task = task_graph.add_task(
@@ -1430,7 +1431,9 @@ def create_value_rasters(
             'target_bb': sample_target_raster_info['bounding_box'],
             'n_threads': 2,
             },
-        target_path_list=[target_10s_profit_yield_path]),
+        dependent_task_list=[profit_yield_10km_task],
+        target_path_list=[target_10s_profit_yield_path],
+        task_name='warp 10km profit yield path')
 
     # multiply by area of pixel to get total production
     target_sr = osr.SpatialReference(sample_target_raster_info['projection'])
