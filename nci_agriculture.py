@@ -1191,17 +1191,12 @@ def total_cost_yield_op(
 
     n_crops = len(crop_yield_harea_cost_array_list) // 2
 
-    LOGGER.debug('start count')
     for crop_index in range(n_crops):
         harea_array = crop_yield_harea_cost_array_list[crop_index]
         cost_array = crop_yield_harea_cost_array_list[crop_index + n_crops]
         valid_mask = (
             (cost_array != _MULT_NODATA) & (harea_array != _MULT_NODATA))
         all_valid |= valid_mask
-        LOGGER.debug(
-            '%s %s %s %s %s', crop_index, numpy.count_nonzero(valid_mask),
-            numpy.sum(cost_array),
-            numpy.sum(harea_array), harea_array)
         result[valid_mask] += (
             harea_array[valid_mask] *
             pollination_yield_factor_list[crop_index] *
@@ -1363,7 +1358,6 @@ def create_value_rasters(
     LOGGER.debug(
         '%s %s', pollination_yield_factor_list, target_10km_value_yield_path)
     task_graph.join()
-    sys.exit()
 
     profit_yield_10km_task = task_graph.add_task(
         func=subtract_2_rasters,
@@ -2502,9 +2496,9 @@ if __name__ == '__main__':
 
     download_data(task_graph)
     valid_crop_set = calculate_valid_crop_set()
-    valid_crop_set_iter = iter(sorted(valid_crop_set))
-    valid_crop_set = set([
-        next(valid_crop_set_iter) for _ in range(len(valid_crop_set)//20)])
+    # valid_crop_set_iter = iter(sorted(valid_crop_set))
+    # valid_crop_set = set([
+    #     next(valid_crop_set_iter) for _ in range(len(valid_crop_set)//20)])
     LOGGER.debug('running %d crops', len(valid_crop_set))
     time.sleep(1.0)
     preprocess_data(task_graph, valid_crop_set)
