@@ -176,37 +176,37 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     # 'crop_nutrient_md5_d6e67fd79ef95ab2dd44ca3432e9bb4d.csv
     target_10km_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_value_yield_rasters',
-        f'monfreda_2008_value_yield_total_10km.tif')
+        'monfreda_2008_value_yield_total_10km.tif')
     target_10s_value_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_value_yield_rasters',
-        f'monfreda_2008_value_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_value_yield_total_10s_%s.tif' % landcover_key)
     target_10s_value_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_value_rasters',
-        f'monfreda_2008_value_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_value_total_10s_%s.tif' % landcover_key)
 
     target_10km_cost_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_cost_yield_rasters',
-        f'monfreda_2008_cost_yield_total_10km.tif')
+        'monfreda_2008_cost_yield_total_10km.tif')
     target_10s_cost_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_cost_yield_rasters',
-        f'monfreda_2008_cost_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_cost_yield_total_10s_%s.tif' % landcover_key)
     target_10s_cost_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_cost_rasters',
-        f'monfreda_2008_cost_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_cost_total_10s_%s.tif' % landcover_key)
 
     target_10km_profit_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_profit_yield_rasters',
-        f'monfreda_2008_profit_yield_total_10km.tif')
+        'monfreda_2008_profit_yield_total_10km.tif')
     target_10s_profit_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_profit_yield_rasters',
-        f'monfreda_2008_profit_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_profit_yield_total_10s_%s.tif' % landcover_key)
     target_10s_profit_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_profit_rasters',
-        f'monfreda_2008_profit_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_profit_total_10s_%s.tif' % landcover_key)
 
     target_10s_harea_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_harea_total_rasters',
-        f'monfreda_2008_harea_total_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_harea_total_%s.tif' % landcover_key)
 
     create_value_rasters(
         task_graph,
@@ -227,39 +227,39 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     # do poll dep value
     target_10km_poll_dep_value_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_poll_dep_value_yield_rasters',
-        f'monfreda_2008_poll_dep_value_yield_total_10km_%s.tif' %
+        'monfreda_2008_poll_dep_value_yield_total_10km_%s.tif' %
         landcover_key)
     target_10s_poll_dep_value_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_poll_dep_value_yield_rasters',
-        f'monfreda_2008_poll_dep_value_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_poll_dep_value_yield_total_10s_%s.tif' % landcover_key)
     target_10s_poll_dep_value_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_poll_dep_value_rasters',
-        f'monfreda_2008_poll_dep_value_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_poll_dep_value_total_10s_%s.tif' % landcover_key)
 
     target_10km_poll_dep_cost_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_poll_dep_cost_yield_rasters',
-        f'monfreda_2008_poll_dep_cost_yield_total_10km_%s.tif' %
+        'monfreda_2008_poll_dep_cost_yield_total_10km_%s.tif' %
         landcover_key)
     target_10s_poll_dep_cost_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_poll_dep_cost_yield_rasters',
-        f'monfreda_2008_poll_dep_cost_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_poll_dep_cost_yield_total_10s_%s.tif' % landcover_key)
     target_10s_poll_dep_cost_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_poll_dep_cost_rasters',
-        f'monfreda_2008_poll_dep_cost_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_poll_dep_cost_total_10s_%s.tif' % landcover_key)
 
     target_10km_pol_dep_profit_yield_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_pol_dep_profit_yield_rasters',
-        f'monfreda_2008_pol_dep_profit_yield_total_10km_%s.tif' % landcover_key)
+        'monfreda_2008_pol_dep_profit_yield_total_10km_%s.tif' % landcover_key)
     target_10s_pol_dep_profit_yield_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_pol_dep_profit_yield_rasters',
-        f'monfreda_2008_pol_dep_profit_yield_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_pol_dep_profit_yield_total_10s_%s.tif' % landcover_key)
     target_10s_pol_dep_profit_path = os.path.join(
-        CHURN_DIR, 'monfreda_2008_pol_dep_profit_rasters',
-        f'monfreda_2008_pol_dep_profit_total_10s_%s.tif' % landcover_key)
+        output_dir,
+        'monfreda_2008_pol_dep_profit_total_10s_%s.tif' % landcover_key)
 
     target_10s_pol_harea_path = os.path.join(
         CHURN_DIR, 'monfreda_2008_harea_total_rasters',
-        f'monfreda_2008_pol_harea_total_%s.tif' % landcover_key)
+        'monfreda_2008_pol_harea_total_%s.tif' % landcover_key)
 
     create_value_rasters(
         task_graph,
@@ -296,10 +296,10 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
             CHURN_DIR, 'monfreda_2008_yield_nutrient_rasters',
             f'monfreda_2008_yield_total_{nut_id}_10km.tif')
         yield_total_nut_10s_path = os.path.join(
-            CHURN_DIR, 'monfreda_2008_yield_nutrient_rasters',
+            output_dir,
             f'monfreda_2008_yield_total_{nut_id}_10s_%s.tif' % landcover_key)
         prod_total_nut_10s_path = os.path.join(
-            CHURN_DIR, 'monfreda_2008_prod_nutrient_rasters',
+            output_dir,
             f'monfreda_2008_prod_total_{nut_id}_10s_%s.tif' % landcover_key)
 
         prod_total_task = task_graph.add_task(
@@ -599,7 +599,7 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
             mask_task_path_map['ag'][1], target_10s_value_path,
             value_total_potential_path),
         target_path_list=[value_total_potential_path],
-        dependent_task_list=[value_total_task, mask_task_path_map['ag'][0]],
+        dependent_task_list=[mask_task_path_map['ag'][0]],
         task_name=(
             f'tot_value_10s_{landcover_key}'))
 
@@ -613,8 +613,7 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
             mask_task_path_map['ag'][1], target_10s_poll_dep_value_path,
             value_poll_dep_potential_scenario_path),
         target_path_list=[value_poll_dep_potential_scenario_path],
-        dependent_task_list=[
-            poll_dep_value_total_task, mask_task_path_map['ag'][0]],
+        dependent_task_list=[mask_task_path_map['ag'][0]],
         task_name=(
             f'value_dep_prod_10s_{landcover_key}'))
 
@@ -1192,12 +1191,17 @@ def total_cost_yield_op(
 
     n_crops = len(crop_yield_harea_cost_array_list) // 2
 
+    LOGGER.debug('start count')
     for crop_index in range(n_crops):
         harea_array = crop_yield_harea_cost_array_list[crop_index]
         cost_array = crop_yield_harea_cost_array_list[crop_index + n_crops]
         valid_mask = (
             (cost_array != _MULT_NODATA) & (harea_array != _MULT_NODATA))
         all_valid |= valid_mask
+        LOGGER.debug(
+            '%s %s %s %s %s', crop_index, numpy.count_nonzero(valid_mask),
+            numpy.sum(cost_array),
+            numpy.sum(harea_array), harea_array)
         result[valid_mask] += (
             harea_array[valid_mask] *
             pollination_yield_factor_list[crop_index] *
@@ -1354,7 +1358,8 @@ def create_value_rasters(
             target_10km_cost_yield_path, gdal.GDT_Float32, yield_nodata),
         target_path_list=[target_10km_cost_yield_path],
         task_name='calculate %s' % target_10km_cost_yield_path)
-
+    LOGGER.debug(harea_raster_path_list)
+    LOGGER.debug(cost_raster_path_list)
     LOGGER.debug(
         '%s %s', pollination_yield_factor_list, target_10km_value_yield_path)
     task_graph.join()
@@ -2422,7 +2427,9 @@ def dot_prod_op(scalar, *raster_nodata_list):
     nodata_mask = numpy.zeros(result.shape, dtype=numpy.bool)
     for index in range(n_elements*2):
         nodata_mask |= numpy.isclose(
-            raster_nodata_list[index], raster_nodata_list[index+n_elements*2])
+            raster_nodata_list[index],
+            raster_nodata_list[index+n_elements*2]) | numpy.isnan(
+            raster_nodata_list[index])
     for index in range(n_elements):
         result[~nodata_mask] += (
             scalar * raster_nodata_list[index][~nodata_mask] *
