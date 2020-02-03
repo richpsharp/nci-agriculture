@@ -142,6 +142,7 @@ FERT_USAGE_DIR = os.path.join(
 
 def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
     """Calculate values for a given landcover.
+
     Parameters:
         task_graph (taskgraph.TaskGraph): taskgraph object used to schedule
             work.
@@ -149,8 +150,10 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
             landcover codes.
         valid_crop_set (set): set of Monfreda style crop ids that are the only
             crops that should be processed.
+
     Returns:
         None.
+
     """
     landcover_key = os.path.splitext(os.path.basename(landcover_path))[0]
     output_dir = os.path.join(WORKING_DIR, landcover_key)
@@ -724,15 +727,19 @@ def build_spatial_index(vector_path):
 def calculate_total_requirements(
         pop_path_list, nut_need_list, target_path):
     """Calculate total nutrient requirements.
+
     Create a new raster by summing all rasters in `pop_path_list` multiplied
     by their corresponding scalar in `nut_need_list`.
+
     Parameters:
         pop_path_list (list of str): list of paths to population counts.
         nut_need_list (list): list of scalars that correspond in order to
             the per-count nutrient needs of `pop_path_list`.
         target_path (str): path to target file.
+
     Return:
         None.
+
     """
     nodata = -1
     pop_nodata = pygeoprocessing.get_raster_info(
@@ -740,8 +747,10 @@ def calculate_total_requirements(
 
     def mult_and_sum(*arg_list):
         """Arg list is an (array0, scalar0, array1, scalar1,...) list.
+
         Returns:
             array0*scalar0 + array1*scalar1 + .... but ignore nodata.
+
         """
         result = numpy.empty(arg_list[0].shape, dtype=numpy.float32)
         result[:] = nodata
@@ -787,12 +796,15 @@ def sub_two_op(a_array, b_array, a_nodata, b_nodata, target_nodata):
 
 def average_rasters(*raster_list, clamp=None):
     """Average rasters in raster list except write to the last one.
+
     Parameters:
         raster_list (list of string): list of rasters to average over.
         clamp (float): value to clamp the individual raster to before the
             average.
+
     Returns:
         None.
+
     """
     nodata_list = [
         pygeoprocessing.get_raster_info(path)['nodata'][0]
@@ -876,13 +888,16 @@ def subtract_3_rasters(
 def create_radial_convolution_mask(
         pixel_size_degree, radius_meters, kernel_filepath):
     """Create a radial mask to sample pixels in convolution filter.
+
     Parameters:
         pixel_size_degree (float): size of pixel in degrees.
         radius_meters (float): desired size of radial mask in meters.
+
     Returns:
         A 2D numpy array that can be used in a convolution to aggregate a
         raster while accounting for partial coverage of the circle on the
         edges of the pixel.
+
     """
     degree_len_0 = 110574  # length at 0 degrees
     degree_len_60 = 111412  # length at 60 degrees
@@ -926,6 +941,7 @@ def create_radial_convolution_mask(
 def threshold_select_raster(
         base_raster_path, select_raster_path, threshold_val, target_path):
     """Select `select` if `base` >= `threshold_val`.
+
     Parameters:
         base_raster_path (string): path to single band raster that will be
             used to determine the threshold mask to select from
@@ -940,8 +956,10 @@ def threshold_select_raster(
             `base_raster_path`. A pixel in this raster will be `select` if
             the corresponding pixel in `base_raster_path` is >=
             `threshold_val`, 0 otherwise or nodata if `base` == nodata.
+
     Returns:
         None.
+
     """
     base_nodata = pygeoprocessing.get_raster_info(
         base_raster_path)['nodata'][0]
@@ -967,6 +985,7 @@ def threshold_select_raster(
 
 def mask_raster(base_path, codes, target_path):
     """Mask `base_path` to 1 where values are in codes. 0 otherwise.
+
     Parameters:
         base_path (string): path to single band integer raster.
         codes (list): list of integer or tuple integer pairs. Membership in
@@ -977,8 +996,10 @@ def mask_raster(base_path, codes, target_path):
             pixels in `base_path` that also match a value or range in
             `codes` will be masked to 1 in `target_path`. All other values
             are 0.
+
     Returns:
         None.
+
     """
     code_list = numpy.array([
         item for sublist in [
@@ -1004,13 +1025,16 @@ def mask_raster(base_path, codes, target_path):
 
 def unzip_file(zipfile_path, target_dir, touchfile_path):
     """Unzip contents of `zipfile_path`.
+
     Parameters:
         zipfile_path (string): path to a zipped file.
         target_dir (string): path to extract zip file to.
         touchfile_path (string): path to a file to create if unzipping is
             successful.
+
     Returns:
         None.
+
     """
     with zipfile.ZipFile(zipfile_path, 'r') as zip_ref:
         zip_ref.extractall(target_dir)
@@ -1021,12 +1045,15 @@ def unzip_file(zipfile_path, target_dir, touchfile_path):
 
 def _make_logger_callback(message):
     """Build a timed logger callback that prints `message` replaced.
+
     Parameters:
         message (string): a string that expects a %f placement variable,
             for % complete.
+
     Returns:
         Function with signature:
             logger_callback(df_complete, psz_message, p_progress_arg)
+
     """
     def logger_callback(df_complete, psz_message, p_progress_arg):
         """Log updates using GDAL API for callbacks."""
@@ -1049,6 +1076,7 @@ def total_yield_op(
         yield_nodata, yield_factor_list,
         *crop_yield_harea_array_list):
     """Calculate total yield.
+
     Parameters:
         yield_nodata (numeric): nodata value for the arrays in
             ``crop_yield_array_list```.
@@ -1058,9 +1086,11 @@ def total_yield_op(
             2*n of 2D arrays of n yield (tons/Ha) for crops that correlate in
             order with the ``yield_factor_list`` followed by
             n harea (proportional area) of those crops.
+
     Returns:
         sum(crop_yield (tons/Ha) * harvested_area(1/1) *
         yield_factor)
+
     """
     result = numpy.empty(
         crop_yield_harea_array_list[0].shape, dtype=numpy.float32)
@@ -1085,6 +1115,7 @@ def total_price_yield_op(
         yield_nodata, pollination_yield_factor_list,
         *crop_yield_harea_price_array_list):
     """Calculate total yield.
+
     Parameters:
         yield_nodata (numeric): nodata value for the arrays in
             ``crop_yield_array_list```.
@@ -1099,9 +1130,11 @@ def total_price_yield_op(
               crops
             * and ending at index 2n for n arrays which are the $/ton for those
               crops.
+
     Returns:
         sum(yield(tons/ha)*harvested_area(1/1)*pol_factor*price($/ton))
         (return units are $/ha)
+
     """
     result = numpy.empty(
         crop_yield_harea_price_array_list[0].shape, dtype=numpy.float32)
@@ -1130,6 +1163,7 @@ def total_cost_yield_op(
         yield_nodata, pollination_yield_factor_list,
         *crop_yield_harea_cost_array_list):
     """Calculate total yield.
+
     Parameters:
         yield_nodata (numeric): nodata value for the arrays in
             ``crop_yield_array_list```.
@@ -1142,9 +1176,11 @@ def total_cost_yield_op(
               ``pollination_yield_factor_list``
             * followed at index n by n cost arrays ($/ha) of those
               crops
+
     Returns:
         sum(harvested_area(1/1)*pol_factor*cost($/ha))
         (return units are $/ha)
+
     """
     result = numpy.empty(
         crop_yield_harea_cost_array_list[0].shape, dtype=numpy.float32)
@@ -1169,12 +1205,14 @@ def total_cost_yield_op(
 
 def density_to_value_op(density_array, area_array, density_nodata):
     """Calculate production.
+
     Parameters:
         density_array (numpy.ndarray): array of densities / area in
             ``area_array``.
         area_array (numpy.ndarray): area of each cell that corresponds with
             ``density_array``.
         density_ndoata (numeric): nodata value of the ``density_array``.
+
     """
     result = numpy.empty(density_array.shape, dtype=numpy.float32)
     result[:] = density_nodata
@@ -1199,6 +1237,7 @@ def create_value_rasters(
         target_10s_profit_path,
         target_total_harea_path):
     """Create an dollar value yield and total value raster for all crops.
+
     Parameters:
         valid_crop_set (set): set of Monfreda style crop ids that are the only
             crops that should be processed in this function.
@@ -1240,8 +1279,10 @@ def create_value_rasters(
             pixel.
         target_total_harea_path (str): path to total harvested area proportion
             for `valid_crop_set`.
+
     Returns:
         None.
+
     """
     for path in [
             target_10km_value_yield_path, target_10s_value_yield_path,
@@ -1436,6 +1477,7 @@ def create_prod_nutrient_raster(
         target_10km_yield_path, target_10s_yield_path,
         target_10s_production_path):
     """Create total production & yield for a nutrient for all crops.
+
     Parameters:
         valid_crop_set (set): set of Monfreda style crop ids that are the only
             crops to process in this function.
@@ -1462,8 +1504,10 @@ def create_prod_nutrient_raster(
             calculated as the sum(
                 crop_yield_map * (100-Percent refuse crop) *
                 (Pollination dependence crop) * nutrient) * (ha / pixel map))
+
     Returns:
         None.
+
     """
     for path in [
             target_10km_yield_path, target_10s_yield_path,
@@ -1545,15 +1589,19 @@ def create_prod_nutrient_raster(
 
 def area_of_pixel(pixel_size, center_lat):
     """Calculate m^2 area of a wgs84 square pixel.
+
     Adapted from: https://gis.stackexchange.com/a/127327/2397
+
     Parameters:
         pixel_size (float): length of side of pixel in degrees.
         center_lat (float): latitude of the center of the pixel. Note this
             value +/- half the `pixel-size` must not exceed 90/-90 degrees
             latitude or an invalid area will be calculated.
+
     Returns:
         Area of square pixel of side length `pixel_size` centered at
         `center_lat` in m^2.
+
     """
     a = 6378137  # meters
     b = 6356752.3142  # meters
@@ -1688,10 +1736,12 @@ def prop_diff_op(array_a, array_b, nodata):
 def build_lookup_from_csv(
         table_path, key_field, to_lower=True, warn_if_missing=True):
     """Read a CSV table into a dictionary indexed by `key_field`.
+
     Creates a dictionary from a CSV whose keys are unique entries in the CSV
     table under the column named by `key_field` and values are dictionaries
     indexed by the other columns in `table_path` including `key_field` whose
     values are the values on that row of the CSV table.
+
     Parameters:
         table_path (string): path to a CSV file containing at
             least the header key_field
@@ -1702,13 +1752,16 @@ def build_lookup_from_csv(
             string values.
         warn_if_missing (bool): If True, warnings are logged if there are
             empty headers or value rows.
+
     Returns:
         lookup_dict (dict): a dictionary of the form {
                 key_field_0: {csv_header_0: value0, csv_header_1: value1...},
                 key_field_1: {csv_header_0: valuea, csv_header_1: valueb...}
             }
+
         if `to_lower` all strings including key_fields and values are
         converted to lowercase unicode.
+
     """
     # Check if the file encoding is UTF-8 BOM first, related to issue
     # https://bitbucket.org/natcap/invest/issues/3832/invest-table-parsing-does-not-support-utf
@@ -1773,6 +1826,7 @@ def cost_table_to_raster(
         base_raster_path, country_vector_path, cost_table_path,
         crop_name, target_cost_raster_path):
     """Rasterize countries as prices.
+
     Parameters:
         base_raster_path (str): path to a raster that will be the base shape
             for `target_crop_price_ratser_path`.
@@ -1784,8 +1838,10 @@ def cost_table_to_raster(
         target_cost_raster_path (str): a raster with pixel values
             corresponding to the country in which the pixel resides and
             the price of that crop in the country.
+
     Returns:
         None.
+
     """
     LOGGER.debug(
         'starting rasterization of %s', target_cost_raster_path)
@@ -1855,6 +1911,7 @@ def calculate_global_costs(
         avg_global_k_cost_table_path,
         country_crop_price_table_path):
     """Parse a global crop prices and ag cost table into per-country prices.
+
     Parameters:
         valid_crop_set (set): set of Monfreda style crop ids that are the only
             crops to process in this function.
@@ -1889,8 +1946,10 @@ def calculate_global_costs(
         country_crop_price_table_path (str): create table with columns
             'country', 'iso_name', 'crop', 'price'. Not sure of the price
             units.
+
     Returns:
         None
+
     """
     ag_costs_df = pandas.read_csv(ag_costs_table_path, skiprows=[1])
     ag_costs_df['item'] = ag_costs_df['item'].str.lower()
@@ -2007,6 +2066,7 @@ def calculate_global_average(
         region_names, region_to_iso_map, crop_names, group_crop_cost_df,
         cost_id, target_table_path, remap_group_id_tuple=None):
     """Calculate `cost_id` average in `group_crop_cost_df` for all crops.
+
     Parameters:
         region_names (set): set of geographic region names.
         region_to_iso_map (dict): map the region in `region_names` to a list
@@ -2022,8 +2082,10 @@ def calculate_global_average(
             in `group_crop_cost_df` in the first element to the second element.
             This was added to account for the "9999" group of China that we
             could remap to East Asia.
+
     Returns:
         None.
+
     """
     avg_global_price_map = {}
     for row in region_names.iterrows():
@@ -2132,13 +2194,16 @@ def download_data(task_graph):
 
 def preprocess_data(task_graph, valid_crop_set):
     """Download all ecoshards and create base tables.
+
     Parameter:
         task_graph (taskgraph.TaskGraph): taskgraph object for scheduling,
             will use to block this function until complete.
         valid_crop_set (set): set of Monfreda style crop ids. These are the
             only crops that will be processed in this function.
+
     Returns:
         None.
+
     """
     calc_global_costs_task = task_graph.add_task(
         func=calculate_global_costs,
@@ -2298,13 +2363,16 @@ def preprocess_data(task_graph, valid_crop_set):
 
 def sum_rasters_op(*raster_nodata_list):
     """Sum all non-nodata values.
+
     Parameters:
         raster_nodata_list (list): list of 2n+1 length where the first n
             elements are raster array values and the second n elements are the
             nodata values for that array. The last element is the target
             nodata.
+
     Returns:
         sum(raster_nodata_list[0:n]) -- while accounting for nodata.
+
     """
     result = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.float32)
     nodata_mask = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.bool)
@@ -2320,13 +2388,16 @@ def sum_rasters_op(*raster_nodata_list):
 
 def dot_prod_op(scalar, *raster_nodata_list):
     """Do a dot product of vectors A*B.
+
     Parameters:
         scalar (float): value to multiply each pair by.
         raster_nodata_list (list): list of 4*n+1 length where the first n
             elements are from vector A, the next n are B, and last 2n are
             nodata values for those elements in order.
+
     Returns:
         A*B and nodata where it overlaps.
+
     """
     n_elements = (len(raster_nodata_list)-1) // 4
     result = numpy.zeros(raster_nodata_list[0].shape, dtype=numpy.float32)
@@ -2381,10 +2452,19 @@ if __name__ == '__main__':
     parser.add_argument(
         'landcover rasters', type=str, nargs='+',
         help=(
-            'Paths, patterns, or ecoshards to landcover rasters that use ESA '
-            'ESA encoding.'))
+            'Paths or patterns to landcover rasters that use ESA style '
+            'encoding.'))
     args = parser.parse_args()
     landcover_raster_list = []
+    for glob_pattern in vars(args)['landcover rasters']:
+        for raster_path in glob.glob(glob_pattern):
+            # just try to open it in case it's not a raster, we won't see
+            # anything otherwise
+            r = gdal.OpenEx(raster_path, gdal.OF_RASTER)
+            if r is None:
+                continue
+            r = None
+            landcover_raster_list.append(raster_path)
 
     task_graph = taskgraph.TaskGraph(
         WORKING_DIR, N_WORKERS, reporting_interval=5.0)
@@ -2396,35 +2476,6 @@ if __name__ == '__main__':
             os.makedirs(dir_path)
         except OSError:
             pass
-
-    for file_pattern in vars(args)['landcover rasters']:
-        # might be a url
-        if file_pattern.startswith('http'):
-            target_path = os.path.join(
-                ECOSHARD_DIR, os.path.basename(file_pattern))
-            fetch_task = task_graph.add_task(
-                func=ecoshard.download_url,
-                args=(
-                    file_pattern, target_path),
-                target_path_list=[target_path],
-                task_name=f'fetch {os.path.basename(target_path)}')
-            fetch_task.join()
-            glob_pattern = target_path
-        else:
-            glob_pattern = file_pattern
-
-        # default is glob:
-        for raster_path in glob.glob(glob_pattern):
-            # just try to open it in case it's not a raster, we won't see
-            # anything otherwise
-            r = gdal.OpenEx(raster_path, gdal.OF_RASTER)
-            if r is None:
-                continue
-            r = None
-            landcover_raster_list.append(raster_path)
-
-    if not landcover_raster_list:
-        raise ValueError('no valid files were found')
 
     download_data(task_graph)
     valid_crop_set = calculate_valid_crop_set()
