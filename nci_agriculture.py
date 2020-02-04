@@ -703,7 +703,6 @@ def calculate_for_landcover(task_graph, landcover_path, valid_crop_set):
             os.path.basename(
                 value_total_realized_scenario_path)}''')
 
-    task_graph.close()
     task_graph.join()
 
 
