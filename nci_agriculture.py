@@ -2489,4 +2489,5 @@ if __name__ == '__main__':
         calculate_for_landcover(task_graph, landcover_path, valid_crop_set)
 
     task_graph.join()
+    LOGGER.debug('joining final taskgraph run')
     task_graph.close()
